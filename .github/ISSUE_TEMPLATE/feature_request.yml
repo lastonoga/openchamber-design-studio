@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an idea or improvement for OpenChamber Design Studio
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Ideas for OpenChamber itself belong to the
+        OpenChamber project (see the link in the issue chooser).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation or friction you are hitting. A concrete workflow beats an abstract wish.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you would like Design Studio to do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you have tried or thought about.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Sketches, links, or anything else that helps explain the idea.
+    validations:
+      required: false

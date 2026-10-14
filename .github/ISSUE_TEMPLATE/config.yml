@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: OpenChamber Design Studio repository
+    url: https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio
+    about: Browse the source and existing issues for this extension.
+  - name: OpenChamber project
+    url: https://docs.openchamber.dev/
+    about: For issues in OpenChamber itself — the host app, the SDK, or the extension runtime.

@@ -1,0 +1,905 @@
+/* The host injects theme tokens as --oc-* on :root via applyHostReady. Fallbacks
+   keep the controls usable in a bare preview while developing.
+
+   The row matches OpenChamber's own chrome — the host's neutral ramp — with a
+   single restrained accent. No gradients, no emoji, no second accent. */
+:root {
+  --oc-bg: #17181b;
+  --oc-fg: #e7e7ea;
+  --oc-muted: #9a9aa2;
+  --oc-surface: var(--oc-elevated, #202126);
+  --oc-muted-surface: #1c1d21;
+  --oc-border: #2c2d33;
+  --oc-hover: #26272c;
+  --oc-active: #2f3037;
+  --oc-selection: #2b3a5c;
+  --oc-selection-fg: #eef2ff;
+  --oc-focus: #4c8dff;
+  --oc-primary: #4c8dff;
+  --oc-primary-fg: #ffffff;
+  --oc-error: #e5484d;
+  --oc-success: #46a758;
+  --oc-warning: #f5a524;
+  --oc-info: #3b82f6;
+  --oc-success-text: var(--oc-fg);
+  --oc-warning-text: var(--oc-fg);
+  --oc-error-text: var(--oc-fg);
+  --oc-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* The hero headline only: a refined system serif, no downloaded font. */
+  --oc-font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --oc-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --oc-radius: 8px;
+  /* Local reference/composer scale; the SDK provides colors, not dimensions. */
+  --ds-space-1: 4px;
+  --ds-space-2: 6px;
+  --ds-space-3: 8px;
+  --ds-space-4: 12px;
+  --ds-font-small: 12px;
+  --ds-control-min: 24px;
+  --ds-control-compact: 30px;
+  --ds-control-touch: 44px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font: 13px/1.45 var(--oc-font);
+  overflow: hidden;
+}
+
+.ds { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+
+/* Content-sized status section: two controls, session status and pick hint.
+   SDK Work Status frames cap at 320px; only this row scrolls if content grows. */
+.ds-statusmode { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; max-height: 320px; overflow-y: auto; }
+
+.ds-rowline { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+
+/* Collapsed-by-script controls leave no phantom space in the row (an author
+   `display` on .ds-server-control would otherwise beat the UA [hidden] rule). */
+.ds-rowline [hidden] { display: none !important; }
+
+/* The Design Mode toggle (and any other plain text button in the row) matches
+   the 30px Start/Stop icon button exactly, so both controls align on one
+   shared center line and read as a single control group. Fixed height +
+   horizontal-only padding keep the label centered; inline-flex centers the
+   text vertically regardless of line-height. */
+.ds-statusmode .ds-rowline button:not(.ds-server-control) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px;
+  line-height: 1;
+}
+
+.ds-hintline {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--oc-muted);
+  opacity: 0.5;
+}
+.ds-hintline.active { color: var(--oc-info); opacity: 1; }
+.ds-hintline.idle { color: var(--oc-muted); opacity: 0.5; }
+
+.ds-sessionline {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--oc-muted);
+  opacity: 0.75;
+}
+.ds-sessionline.off { opacity: 0.5; }
+
+.ds-statusmode > * { flex-shrink: 0; }
+
+/* ---- shared controls ---- */
+
+button {
+  background: var(--oc-surface);
+  color: var(--oc-fg);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  padding: 5px 9px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+}
+button:hover { background: var(--oc-hover); }
+button:active { background: var(--oc-active); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:disabled:hover { background: var(--oc-surface); }
+button.primary { background: var(--oc-primary); color: var(--oc-primary-fg); border-color: var(--oc-primary); }
+button.on { background: var(--oc-selection); color: var(--oc-selection-fg); border-color: var(--oc-focus); }
+
+.ds-status {
+  color: var(--oc-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  max-width: 45%;
+}
+.ds-status.error { color: var(--oc-error); }
+.ds-status.warn { color: var(--oc-warning); }
+
+.ds-warn {
+  color: var(--oc-error);
+  font-size: 12px;
+  border: 1px solid var(--oc-error);
+  border-radius: var(--oc-radius);
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- full-page creation home --------------------------------------------
+   A centred column: the hero, the composer with its type chip and send, the
+   working-directory selector, and the idea cards. OpenChamber's neutral chrome
+   with the single blue accent; no gradients, no emoji. */
+.ds-page { overflow: auto; padding: 0; }
+.ds-page-body { display: flex; flex-direction: column; align-items: center; min-height: 100%; padding: 56px 20px 96px; }
+.ds-home { width: 100%; max-width: 620px; display: flex; flex-direction: column; gap: 18px; }
+
+.ds-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 4px 2px; text-align: center; }
+.ds-hero-title {
+  margin: 0;
+  font-family: var(--oc-font-display);
+  font-weight: 500;
+  font-size: clamp(30px, 6vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+}
+.ds-hero-type { font-style: italic; color: var(--oc-primary); }
+.ds-hero-sub { margin: 0; color: var(--oc-muted); font-size: 14px; }
+.ds-home-warn {
+  color: var(--oc-error-text);
+  font-size: 12px;
+  border: 1px solid var(--oc-error);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* The composer: a tall rounded box; the accent line sits along its bottom. */
+.ds-composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--oc-muted-surface);
+  border: 1px solid var(--oc-border);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: border-color 160ms ease-out;
+}
+.ds-composer:focus-within { border-color: var(--oc-focus); }
+/* While the picker overlay is open it must escape the composer's rounded clip. */
+.ds-composer.ds-overlay-open { overflow: visible; }
+/* The transparent backdrop is fixed above the composer (z-index 40). Lift every
+   composer trigger over it while an overlay is open, so a trigger click still
+   reaches the button: a second click on the open trigger closes the overlay,
+   and clicking another trigger switches overlays in one click. */
+.ds-composer.ds-overlay-open .ds-menu-trigger { position: relative; z-index: 42; }
+.ds-composer-input {
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--oc-fg);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 16px 18px 4px;
+  min-height: 78px;
+  max-height: 240px;
+}
+.ds-composer-input::placeholder { color: var(--oc-muted); }
+.ds-composer-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px; }
+.ds-composer-spacer { flex: 1 1 auto; }
+
+.ds-plus {
+  width: 30px; height: 30px;
+  padding: 0;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: var(--oc-muted);
+}
+.ds-plus:hover { color: var(--oc-fg); background: var(--oc-hover); }
+
+.ds-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px;
+  padding: 0 6px 0 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--oc-fg);
+  background: var(--oc-surface);
+}
+.ds-chip svg { opacity: 0.55; }
+
+.ds-send {
+  width: 34px; height: 34px;
+  padding: 0;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: var(--oc-muted);
+}
+.ds-send.ready { background: var(--oc-primary); border-color: var(--oc-primary); color: var(--oc-primary-fg); }
+.ds-send.ready:hover { background: var(--oc-primary); }
+.ds-send.busy { cursor: progress; }
+
+.ds-composer-accent { height: 2px; width: 100%; background: var(--oc-border); }
+.ds-composer-accent-fill {
+  height: 100%;
+  width: 6%;
+  background: var(--oc-primary);
+  transition: width 220ms ease-out;
+}
+
+/* Local Studio draft only; never a mirror of the host composer's attachments. */
+.ds-reference-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--ds-space-1) var(--ds-space-4);
+  list-style: none;
+}
+.ds-reference-list[hidden] { display: none; }
+.ds-reference-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 var(--ds-space-2) 0 var(--ds-space-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: var(--oc-surface);
+  color: var(--oc-fg);
+  font-size: var(--ds-font-small);
+  line-height: 1.5;
+}
+.ds-reference-chip > svg { flex: 0 0 auto; color: var(--oc-muted); }
+.ds-reference-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  direction: rtl;
+  text-align: left;
+}
+.ds-reference-details { min-width: 0; flex: 1 1 auto; }
+.ds-reference-details summary { cursor: pointer; min-height: var(--ds-control-compact); display: flex; align-items: center; }
+.ds-reference-details summary:focus-visible { outline: 2px solid var(--oc-focus); outline-offset: 1px; }
+.ds-reference-details[open] .ds-reference-label { white-space: normal; overflow-wrap: anywhere; direction: ltr; }
+.ds-reference-path, .ds-reference-source { display: block; overflow-wrap: anywhere; font-size: inherit; }
+.ds-reference-source { color: var(--oc-muted); }
+.ds-reference-remove {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: var(--ds-control-compact);
+  min-height: var(--ds-control-compact);
+  padding: 0;
+  background: transparent;
+  color: var(--oc-fg);
+  border: 0;
+  border-radius: var(--oc-radius);
+}
+.ds-reference-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.ds-reference-remove:focus-visible,
+.ds-composer button:focus-visible,
+.ds-composer input:focus-visible,
+.ds-composer textarea:focus-visible {
+  outline: 2px solid var(--oc-focus);
+  outline-offset: 1px;
+}
+.ds-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-reference-spinner { display: inline-block; vertical-align: middle; margin-right: var(--ds-space-1); animation: ds-reference-spin 900ms linear infinite; }
+@keyframes ds-reference-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ds-reference-spinner { animation: none; } }
+/* md/touch: narrow mobile/tablet layouts also need touch targets without a
+   coarse-pointer device being attached to the browser. */
+@media (max-width: 768px), (pointer: coarse) {
+  .ds-reference-remove, .ds-plus, .ds-send, .ds-chip, .ds-attach-paste-add { min-width: var(--ds-control-touch); min-height: var(--ds-control-touch); }
+  .ds-reference-details summary, .ds-attach-paste-input { min-height: var(--ds-control-touch); }
+}
+
+/* Dropdowns: a panel that expands inside the composer / the directory row. */
+.ds-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-top: 1px solid var(--oc-border);
+  background: var(--oc-surface);
+  max-height: 280px;
+  overflow: auto;
+}
+.ds-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.ds-menu-item:hover { background: var(--oc-hover); }
+.ds-menu-item.on { background: var(--oc-selection); color: var(--oc-selection-fg); }
+.ds-menu-item.on:hover { background: var(--oc-selection); }
+.ds-menu-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.ds-menu-item strong { font-size: 13px; font-weight: 600; }
+.ds-menu-hint {
+  color: var(--oc-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-menu-item.on .ds-menu-hint { color: inherit; opacity: 0.82; }
+.ds-menu-note { padding: 8px 10px; color: var(--oc-muted); font-size: 12px; }
+.ds-menu-note.error { color: var(--oc-error-text); overflow-wrap: anywhere; }
+.ds-menu-retry { align-self: flex-start; margin: 2px 10px 6px; }
+
+.ds-options { display: flex; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--oc-border); background: var(--oc-surface); }
+.ds-field { flex: 1 1 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ds-field-label { color: var(--oc-muted); font-size: 11px; }
+.ds-field select {
+  width: 100%;
+  background: var(--oc-muted-surface);
+  color: var(--oc-fg);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* ---- design-system picker: ONE merged overlay anchored to the control -------
+   A search field + `+ Create`, then a two-column body (the list beside the
+   detail pane), then the Clear action. It floats absolutely, anchored to the
+   design-system control, so opening it never reflows the composer or the lists
+   below; a full-frame backdrop catches an outside click. The container is
+   OpenChamber's chrome; only the token swatches wear the preset's own colours. */
+.ds-ds-trigger { padding-left: 9px; }
+.ds-ds-trigger svg { opacity: 0.55; }
+
+/* The control + its overlay share the composer as their positioning context:
+   the anchor itself is NOT positioned, so the absolutely-positioned panel below
+   resolves against `.ds-composer` (position: relative) and always starts at the
+   composer's left edge — it can never be pushed off the right of the page by a
+   control that sits mid-bar. */
+.ds-ds-anchor { display: inline-flex; align-items: center; }
+
+/* A full-frame, transparent scrim behind the panel: an outside click lands here
+   (and is not inside the panel/trigger), so the window's click listener closes
+   the picker. */
+.ds-ds-backdrop { position: fixed; inset: 0; z-index: 40; background: transparent; }
+
+.ds-ds-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 41;
+  width: min(460px, 100%);
+  max-width: 100%;
+  max-height: min(76vh, 540px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--oc-border);
+  border-radius: 12px;
+  background: var(--oc-surface);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  overflow: hidden;
+  animation: ds-pop 140ms ease-out both;
+}
+@keyframes ds-pop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.ds-ds-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--oc-border);
+}
+.ds-ds-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--oc-muted-surface);
+  color: var(--oc-fg);
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+}
+.ds-ds-search:focus { outline: 2px solid var(--oc-focus); outline-offset: 1px; }
+.ds-ds-search::placeholder { color: var(--oc-muted); }
+.ds-ds-create { flex: 0 0 auto; font-size: 12px; padding: 5px 9px; color: var(--oc-muted); }
+.ds-ds-create:disabled { opacity: 0.55; }
+
+.ds-ds-body { display: flex; min-height: 0; }
+.ds-ds-list {
+  flex: 1 1 58%;
+  min-width: 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 1px;
+  border-right: 1px solid var(--oc-border);
+}
+.ds-ds-group {
+  padding: 8px 8px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--oc-muted);
+}
+.ds-ds-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.ds-ds-item:hover { background: var(--oc-hover); }
+.ds-ds-item.on { background: var(--oc-selection); color: var(--oc-selection-fg); border-color: var(--oc-focus); }
+.ds-ds-item.on:hover { background: var(--oc-selection); }
+.ds-ds-item:focus-visible { outline: 2px solid var(--oc-focus); outline-offset: 1px; }
+.ds-ds-item-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.ds-ds-item-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-ds-item-cat { font-size: 10px; color: var(--oc-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-ds-item.on .ds-ds-item-cat { color: inherit; opacity: 0.82; }
+.ds-ds-check { flex: 0 0 auto; display: inline-flex; visibility: hidden; color: var(--oc-primary); }
+.ds-ds-item.on .ds-ds-check { visibility: visible; color: inherit; }
+.ds-ds-empty { padding: 8px; color: var(--oc-muted); font-size: 12px; }
+
+.ds-ds-detail {
+  flex: 1 1 42%;
+  min-width: 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.ds-ds-detail-name { font-size: 13px; font-weight: 600; }
+.ds-ds-detail-cat { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--oc-muted); }
+.ds-ds-detail-desc { margin: 0; font-size: 12px; color: var(--oc-muted); line-height: 1.5; }
+.ds-ds-swatches { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.ds-ds-swatch {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--oc-border);
+  background: var(--oc-muted-surface);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.ds-ds-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--oc-border);
+}
+.ds-ds-clear { font-size: 12px; }
+
+/* The type picker and the `+` attach menu reuse the SAME anchored panel as the
+   design-system picker; each just narrows the width and drops the list's inner
+   divider, since neither is a two-column body. */
+.ds-type-panel { width: min(360px, 88vw); }
+.ds-attach-panel { width: min(380px, 100%); }
+.ds-type-list,
+.ds-attach-list { border-right: 0; }
+.ds-attach-list { max-height: 320px; }
+
+/* A disabled source row stays visible but inert,
+   with the reason in its hint. */
+.ds-menu-item:disabled { opacity: 0.55; cursor: not-allowed; }
+.ds-menu-item:disabled:hover { background: transparent; }
+
+/* The `+` panel's paste-a-path row: a labelled mono input and the Add action,
+   under the source list. Enter — or Add — attaches and closes. */
+.ds-attach-paste {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 10px 4px;
+  border-top: 1px solid var(--oc-border);
+}
+.ds-attach-paste-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ds-attach-paste-label { font-size: 11px; color: var(--oc-muted); }
+.ds-attach-paste-input {
+  min-width: 0;
+  background: var(--oc-muted-surface);
+  color: var(--oc-fg);
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-family: var(--oc-mono);
+  font-size: 12px;
+}
+.ds-attach-paste-input:focus { outline: 2px solid var(--oc-focus); outline-offset: 1px; }
+.ds-attach-paste-input::placeholder { color: var(--oc-muted); }
+.ds-attach-paste-add { flex: 0 0 auto; font-size: 12px; padding: 6px 12px; }
+
+/* A menu row's title line: the name and (when present) its readiness badge. */
+.ds-menu-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ds-menu-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ds-attach-note {
+  padding: 8px 10px;
+  color: var(--oc-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ds-attach-note.error { color: var(--oc-error-text); }
+
+/* The rail panel surface: one calm pointer line, nothing else. */
+.ds-panel-note {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+}
+.ds-panel-note-line {
+  margin: 0;
+  color: var(--oc-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .ds-composer-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .ds-composer-bar .ds-ds-anchor { min-width: 0; }
+  .ds-composer-bar .ds-ds-anchor:nth-child(2) { grid-column: 2; grid-row: 1; }
+  .ds-composer-bar .ds-ds-anchor:nth-child(3) { grid-column: 2; grid-row: 2; }
+  .ds-composer-bar .ds-chip { max-width: 100%; }
+  .ds-composer-spacer { display: none; }
+  .ds-composer-bar .ds-send { grid-column: 3; grid-row: 1 / span 2; }
+  .ds-ds-body { flex-direction: column; }
+  .ds-ds-list { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--oc-border); max-height: 200px; }
+  .ds-ds-detail { max-height: 180px; }
+}
+
+/* The working-directory selector: a full-width row with a caret. */
+.ds-dir { position: relative; }
+.ds-dir-trigger {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--oc-surface);
+  border: 1px solid var(--oc-border);
+  text-align: left;
+}
+.ds-dir-label { color: var(--oc-muted); font-size: 12px; flex: 0 0 auto; }
+.ds-dir-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-dir-trigger svg { flex: 0 0 auto; opacity: 0.55; }
+.ds-dir .ds-menu { margin-top: 6px; border: 1px solid var(--oc-border); border-radius: 12px; }
+/* The one guidance line under the selector when the frame's directory belongs to
+   no registered project: the same message a send refuses with. */
+.ds-dir-note {
+  margin-top: 8px;
+  padding: 10px 12px;
+  color: var(--oc-warning-text);
+  font-size: 12px;
+  border: 1px dashed color-mix(in srgb, var(--oc-warning) 45%, transparent);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Idea cards: a small abstract SVG preview, then title and one-liner. */
+.ds-ideas { display: flex; flex-direction: column; gap: 8px; }
+.ds-ideas-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--oc-muted); }
+.ds-idea-list { display: flex; flex-direction: column; gap: 8px; }
+.ds-idea {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--oc-surface);
+  border: 1px solid var(--oc-border);
+  text-align: left;
+  transition: background 140ms ease-out, border-color 140ms ease-out, transform 140ms ease-out;
+}
+.ds-idea:hover { background: var(--oc-hover); border-color: var(--oc-focus); transform: translateY(-1px); }
+.ds-idea svg { flex: 0 0 auto; border-radius: 7px; }
+.ds-idea-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.ds-idea-title { font-size: 13px; font-weight: 600; }
+.ds-idea-desc {
+  font-size: 12px;
+  color: var(--oc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-thumb-bg { fill: var(--oc-muted-surface); }
+.ds-thumb-line { fill: var(--oc-border); }
+.ds-thumb-accent { fill: var(--oc-primary); opacity: 0.85; }
+
+/* ---- the merged list below the composer: design projects and design chats ----
+   ONE list. Each row is one full-width button: a small leading type icon (a
+   framed canvas for a project, a speech bubble for a chat), then a name, a
+   readiness badge and a meta line at left, an action label at right. */
+.ds-section { display: flex; flex-direction: column; gap: 8px; }
+.ds-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ds-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--oc-muted); }
+.ds-section-reset {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--oc-muted);
+}
+.ds-list { display: flex; flex-direction: column; gap: 8px; }
+/* A row is a shell (border/background) holding one full-width action button —
+   and, on a ready project row, a second `Preview` action beside it. */
+.ds-list-row {
+  display: flex; align-items: stretch;
+  width: 100%;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--oc-surface);
+  border: 1px solid var(--oc-border);
+  overflow: hidden;
+  transition: background 140ms ease-out, border-color 140ms ease-out, transform 140ms ease-out;
+}
+.ds-list-row:hover { background: var(--oc-hover); border-color: var(--oc-focus); transform: translateY(-1px); }
+.ds-list-open {
+  flex: 1 1 auto;
+  display: flex; align-items: center; gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ds-list-open:hover, .ds-list-open:active { background: transparent; }
+.ds-list-open:focus-visible { outline: 2px solid var(--oc-focus); outline-offset: -2px; }
+.ds-list-preview {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ds-list-icon {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  color: var(--oc-muted);
+  background: var(--oc-muted-surface);
+  border: 1px solid var(--oc-border);
+  transition: color 140ms ease-out, border-color 140ms ease-out;
+}
+.ds-list-row:hover .ds-list-icon { color: var(--oc-primary); border-color: var(--oc-focus); }
+.ds-list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.ds-list-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ds-list-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-list-meta {
+  font-size: 12px;
+  color: var(--oc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-list-warn { font-size: 11px; color: var(--oc-warning-text); overflow-wrap: anywhere; }
+.ds-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--oc-muted);
+  background: var(--oc-muted-surface);
+  border: 1px solid var(--oc-border);
+}
+.ds-badge.ready {
+  color: var(--oc-success-text);
+  border-color: color-mix(in srgb, var(--oc-success) 45%, transparent);
+  background: color-mix(in srgb, var(--oc-success) 12%, transparent);
+}
+.ds-list-go { flex: 0 0 auto; font-size: 12px; font-weight: 500; color: var(--oc-muted); }
+.ds-list-row:hover .ds-list-go { color: var(--oc-primary); }
+.ds-list-note {
+  padding: 10px 12px;
+  color: var(--oc-muted);
+  font-size: 12px;
+  border: 1px dashed var(--oc-border);
+  border-radius: 12px;
+}
+.ds-list-note.error {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  color: var(--oc-error-text);
+  border-color: var(--oc-error);
+  overflow-wrap: anywhere;
+}
+.ds-list-retry { flex: 0 0 auto; }
+
+/* The calm closing line under everything: the extension name and a hint, so the
+   content never sits flush against the frame's bottom edge. No controls. */
+.ds-footer {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  margin-top: 6px;
+  padding: 18px 4px 2px;
+  border-top: 1px solid var(--oc-border);
+  font-size: 12px;
+  color: var(--oc-muted);
+}
+.ds-footer-name { font-weight: 600; color: var(--oc-fg); }
+
+/* Dropping a file anywhere on the page: the composer leans in (its border takes
+   the accent) and a small fixed pill names what a drop does. The pill ignores
+   pointer events, so it never perturbs the dragenter/leave count. */
+.ds-page-body.ds-drop .ds-composer { border-color: var(--oc-focus); }
+.ds-page-body.ds-drop::after {
+  content: 'Use + to paste an accessible file path';
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  max-width: calc(100% - 24px);
+  overflow-wrap: anywhere;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--oc-surface);
+  border: 1px solid var(--oc-focus);
+  color: var(--oc-fg);
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
+}
+
+/* The one-time staggered reveal on first paint. */
+@keyframes ds-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.ds-enter .ds-hero { animation: ds-rise 420ms ease-out both; }
+.ds-enter .ds-composer { animation: ds-rise 420ms ease-out 60ms both; }
+.ds-enter .ds-dir { animation: ds-rise 420ms ease-out 120ms both; }
+.ds-enter .ds-ideas { animation: ds-rise 420ms ease-out 180ms both; }
+.ds-enter .ds-section { animation: ds-rise 420ms ease-out 240ms both; }
+.ds-enter .ds-footer { animation: ds-rise 420ms ease-out 300ms both; }
+
+.hidden { display: none !important; }
+
+/**
+ * Preview-dev-server Start/Stop icon button in the compact status row.
+ * Sits immediately left of the Design Mode ON/OFF toggle. The icon shape shows
+ * the action (triangle = Start, square = Stop) so colour is never the only cue.
+ * State classes are toggled by script; this stylesheet only provides the visuals.
+ */
+.ds-server-control {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: 0 0 auto;
+  border-radius: var(--oc-radius);
+}
+
+.ds-server-control .ds-server-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  pointer-events: none;
+  transition: clip-path 120ms ease-out;
+}
+
+/* Server is stopped: action is Start (green, right-pointing triangle). */
+.ds-server-control.is-stopped { color: var(--oc-success); }
+.ds-server-control.is-stopped .ds-server-icon { clip-path: polygon(25% 0%, 100% 50%, 25% 100%); }
+
+/* Server is running: action is Stop (red, solid square). */
+.ds-server-control.is-running { color: var(--oc-error); }
+.ds-server-control.is-running .ds-server-icon { clip-path: inset(2px); }
+
+/* Loading: muted indeterminate spinner, action blocked. */
+.ds-server-control.is-loading { color: var(--oc-muted); cursor: progress; }
+.ds-server-control.is-loading .ds-server-icon {
+  background: transparent;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  clip-path: none;
+  animation: ds-server-spin 850ms linear infinite;
+}
+
+/* Error: amber, visually muted and disabled-looking but still focusable. */
+.ds-server-control.is-error {
+  color: var(--oc-warning);
+  opacity: 0.65;
+  cursor: default;
+}
+
+/* Explicitly disabled: lower opacity, non-interactive cursor. */
+.ds-server-control:disabled,
+.ds-server-control.is-loading:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Accessible focus ring for keyboard users. */
+.ds-server-control:focus-visible,
+.ds-rowline button:focus-visible { outline: 2px solid var(--oc-focus); outline-offset: 1px; }
+
+/* Screen-reader-only announcement of dev-server state changes. */
+.ds-server-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes ds-server-spin { to { transform: rotate(360deg); } }
+
+/* Coarse/narrow viewports get the standard 44 px minimum touch target. */
+@media (max-width: 768px), (pointer: coarse) {
+  .ds-server-control,
+  .ds-statusmode .ds-rowline button:not(.ds-server-control) {
+    min-width: var(--ds-control-touch);
+    min-height: var(--ds-control-touch);
+    width: auto;
+    height: auto;
+  }
+}
+
+/* Honour a reduced-motion preference: no transitions or reveals. */
+@media (prefers-reduced-motion: reduce) {
+  button, .ds-idea, .ds-list-row, .ds-list-icon, .ds-composer, .ds-composer-accent-fill { transition: none; }
+  .ds-enter .ds-hero, .ds-enter .ds-composer, .ds-enter .ds-dir, .ds-enter .ds-ideas, .ds-enter .ds-section, .ds-enter .ds-footer { animation: none; }
+  .ds-ds-panel { animation: none; }
+  .ds-server-control.is-loading .ds-server-icon { animation: none; }
+}

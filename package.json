@@ -1,0 +1,79 @@
+{
+  "name": "openchamber-design-studio",
+  "version": "0.1.0",
+  "description": "OpenChamber Design Studio — a chat-driven design harness with a live sandboxed preview and point-and-edit into the standard OpenChamber chat.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "openchamber",
+    "openchamber-extension",
+    "design",
+    "ui",
+    "design-system",
+    "live-preview",
+    "ai-agent"
+  ],
+  "homepage": "https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio/issues"
+  },
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.2.0"
+    },
+    "contributes": {
+      "panel": {
+        "id": "design-studio",
+        "name": "OpenChamber Design Studio",
+        "icon": "icon.svg",
+        "entry": "panel/index.html"
+      },
+      "page": {
+        "entry": "panel/index.html",
+        "title": "OpenChamber Design Studio"
+      },
+      "commands": [
+        {
+          "name": "design",
+          "description": "Toggle Design Mode and attach design context"
+        }
+      ],
+      "capabilities": [
+        "prompt",
+        "sessions"
+      ],
+      "statusSection": {
+        "entry": "panel/index.html",
+        "title": "Design Mode",
+        "requiresProject": true,
+        "defaultExpanded": true,
+        "height": 84
+      },
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host",
+        "provides": [
+          "browser"
+        ]
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-concurrency=1",
+    "check": "npm run typecheck && npm run build && npm run test"
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "2.2.0",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}
