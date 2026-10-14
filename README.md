@@ -42,7 +42,6 @@ the harness, the browser bridge and the chat integration are this project's own.
 
 Where it stands today: point at an element, type what should change, and the
 agent edits the project while the preview reloads. That loop is implemented.
-Voice input is not (see **Not yet / Roadmap** below).
 
 ## Install
 
@@ -152,13 +151,6 @@ Design sessions target one of several types — a wireframe, hi-fi screens, an
 interactive prototype or a presentation deck — and the merged **Your design work**
 list on the creation page keeps every registered design project and design chat in
 one place, each row told apart by a small type icon.
-
-### Not yet / Roadmap
-
-- **Voice and dictation are not implemented.** There is no microphone or speech
-  API anywhere in this extension; the capability is deferred. Dictation, when it
-  arrives, belongs to OpenChamber's own composer rather than this extension, so
-  none of the screenshots above depend on it.
 
 ## Configuration and requested permissions
 
