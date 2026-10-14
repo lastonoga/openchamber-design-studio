@@ -27,3 +27,6 @@ tests/publication-hygiene-2026-10-14/
 # Internal workflow/planning docs and run evidence (local only)
 docs/superpowers/
 tests/adversarial/design-work-omit-2026-10-14/logs/
+tests/adversarial/design-work-omit-2026-10-14/*.md
+tests/adversarial/design-work-omit-2026-10-14/tools/
+tests/root-workspace-2026-10-13/*.md
