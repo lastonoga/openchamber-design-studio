@@ -2,15 +2,11 @@
 
 ## Reporting a vulnerability
 
-Report suspected security issues **privately** to:
-
-```
-SECURITY_CONTACT_PLACEHOLDER
-```
-
-> **Maintainer note:** `SECURITY_CONTACT_PLACEHOLDER` above must be replaced with
-> a real, monitored contact address before this repository is published. The
-> project intentionally does not ship a real email or handle in the source tree.
+Report suspected security issues **privately** through GitHub's private
+vulnerability reporting: open the repository's **Security** tab and use
+**Report a vulnerability** ("Privately report a security vulnerability"). This
+keeps the report and any discussion out of the public issue tracker until a fix
+is ready.
 
 Please do not open a public issue for a suspected vulnerability. Include:
 
@@ -33,9 +29,9 @@ Design Studio is an OpenChamber extension, and it asks for trust. Stated plainly
 - Its **service binds a loopback HTTP port** (`127.0.0.1`) and authenticates
   requests with a **bearer token**. The service runs with your full user access
   and no sandbox.
-- It **drives a real Google Chrome** (headless, launched with a throwaway
-  profile) **with your own user rights**, and injects scripts into the pages it
-  opens, such as the Cmd/Ctrl-click pick script.
+- It **drives a real Google Chrome** (a chromeless `--app` window with a
+  throwaway profile) **with your own user rights**, and injects scripts into the
+  pages it opens, such as the Cmd/Ctrl-click pick script.
 
 Treat it as you would any tool that runs code on your machine: install it only
 from a source you trust.

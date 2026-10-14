@@ -1,7 +1,7 @@
 {
   "name": "openchamber-design-studio",
   "version": "0.1.0",
-  "description": "OpenChamber Design Studio — a chat-driven design harness with a live sandboxed preview and point-and-edit into the standard OpenChamber chat.",
+  "description": "OpenChamber Design Studio \u2014 a chat-driven design harness with a live sandboxed preview and point-and-edit into the standard OpenChamber chat.",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -14,13 +14,13 @@
     "live-preview",
     "ai-agent"
   ],
-  "homepage": "https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio#readme",
+  "homepage": "https://github.com/lastonoga/openchamber-design-studio#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio.git"
+    "url": "https://github.com/lastonoga/openchamber-design-studio.git"
   },
   "bugs": {
-    "url": "https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio/issues"
+    "url": "https://github.com/lastonoga/openchamber-design-studio/issues"
   },
   "openchamber": {
     "apiVersion": 1,

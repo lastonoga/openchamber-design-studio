@@ -7,13 +7,7 @@ what you want changed, and the agent edits the real project while you watch.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![OpenChamber engine](https://img.shields.io/badge/openchamber-%E2%89%A5%202.2.0-4b5563)](package.json)
-<!-- Swap the static CI badge below for the live GitHub Actions badge once the repository has a public remote:
-     [![CI](https://github.com/OWNER/openchamber-design-studio/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml) -->
-[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF)](.github/workflows/ci.yml)
-
-> Screenshots below are placeholders committed so the page renders. Each one names
-> exactly what it should show in [`docs/screenshots/SHOTLIST.md`](docs/screenshots/SHOTLIST.md);
-> replace them with real captures before publishing.
+[![CI](https://github.com/lastonoga/openchamber-design-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/lastonoga/openchamber-design-studio/actions/workflows/ci.yml)
 
 ![The OpenChamber Design Studio creation page, with the prompt composer, a type chip, and the merged "Your design work" list of design projects and design chats below it.](docs/screenshots/hero-design-studio-1280.png)
 
@@ -120,8 +114,6 @@ outer markup, computed styles and the page URL. The chip's text reaches the mode
 its `data` payload is echoed back byte-for-byte to the extension. Hovering a
 reference row briefly re-flashes the matching element in the live window.
 
-![A picked element shown as a reference chip on the chat composer, next to its selector and captured styles.](docs/screenshots/feature-pick-to-reference-1280.png)
-
 ### The harness runs inside your project
 
 When Design Mode turns on for a project, the extension writes a project-local
@@ -133,8 +125,6 @@ extension composes a prompt. The generated file imports nothing and adds no
 dependency; the extension never overwrites a file it did not generate, and writing
 it is a deliberate, visible side effect.
 
-![The generated design-studio-harness.ts plugin open in the editor, showing the design-system authority and verification protocol it injects into every turn.](docs/screenshots/feature-harness-rules-1280.png)
-
 ### Design systems and presets
 
 The workflow is built around a project's own **DESIGN.md** and **tokens.css**: when
@@ -144,8 +134,6 @@ catalog of **22 design-system presets** across 13 categories (Modern & Minimal,
 Professional & Corporate, Developer Tools, and more) with a searchable preset
 picker. A preset supplies semantic token values the scaffold and the harness can
 build on.
-
-![The Design Studio preset picker open, listing design-system presets grouped by category with colour swatches.](docs/screenshots/feature-design-system-presets-1280.png)
 
 ### Project config and scaffolding
 
@@ -158,39 +146,12 @@ loopback dev-server port from the range 5200–5999 (starting at a random offset
 parallel inits rarely collide), starts the dev server and writes the harness
 plugin — before the agent session even starts.
 
-![The .design-studio.json configuration panel open beside a design project, showing its url, type and harness settings.](docs/screenshots/feature-project-config-1280.png)
-
 ### What it produces
 
 Design sessions target one of several types — a wireframe, hi-fi screens, an
 interactive prototype or a presentation deck — and the merged **Your design work**
 list on the creation page keeps every registered design project and design chat in
 one place, each row told apart by a small type icon.
-
-Wireframe:
-
-![A low-fidelity wireframe of a checkout flow, boxes and labels only, rendered in the live preview.](docs/screenshots/output-wireframe-1280.png)
-
-Hi-fi screens:
-
-![A high-fidelity product pricing page with three tiers and a feature comparison, rendered in the live preview.](docs/screenshots/output-hi-fi-1280.png)
-
-Interactive prototype:
-
-![An interactive dashboard prototype with live metrics, filters and charts, rendered in the live preview.](docs/screenshots/output-prototype-1280.png)
-
-Presentation deck:
-
-![An HTML presentation deck slide rendered in the live preview, with its own navigation and print layout.](docs/screenshots/output-deck-1280.png)
-
-On a narrow viewport the same surfaces reflow down to the chat row and the
-composer:
-
-![The Design Studio status row and composer on a 390-pixel mobile viewport.](docs/screenshots/mobile-status-390.png)
-
-The whole point-to-change loop, end to end:
-
-![A screen recording of the pick-to-change loop: Cmd-clicking an element in the live preview, the reference appearing on the composer, and the agent editing the page.](docs/screenshots/demo-pick-to-change.gif)
 
 ### Not yet / Roadmap
 

@@ -63,7 +63,7 @@ theirs, not ours. To ask, email `feedback@openchamber.dev` with the subject
 
 ```text
 Extension name: OpenChamber Design Studio
-Repository URL: https://github.com/OWNER_PLACEHOLDER/openchamber-design-studio
+Repository URL: https://github.com/lastonoga/openchamber-design-studio
 Category: Tools
 What it does: A design harness for OpenChamber. It brings your running app into
 the chat as a live browser you can point at, and turns what you click into chat
@@ -74,9 +74,6 @@ scaffolding, and a .design-studio.json project config.
 ```
 
 `Category` is one of `Tools`, `Usage`, `Themes`.
-
-> **Maintainer note:** `OWNER_PLACEHOLDER` in the repository URL above must be
-> replaced with the real GitHub owner before sending.
 
 ## 5. Reference docs
 
