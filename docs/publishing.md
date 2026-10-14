@@ -15,6 +15,18 @@ maintainers can find it:
 
 `openchamber`, `openchamber-extension`, `design`, `design-system`
 
+Set the repository **description** (the one line under the repo name) to lead
+with what it is for, not with the technology:
+
+```text
+Open, local alternative to cloud design canvases — point at your running app in
+the chat and let the agent change it. An extension for OpenChamber.
+```
+
+Keep the README's first screen doing the same job: title, one sentence naming the
+open/local alternative, the hero screenshot, and only then installation. That
+first screen is what a visitor and a directory reviewer judge the project on.
+
 ## 2. No npm publish is needed
 
 OpenChamber installs an extension from a **git URL, a folder, or a `.zip`** — not
