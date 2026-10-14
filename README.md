@@ -1,9 +1,9 @@
 # OpenChamber Design Studio
 
-An extension for OpenChamber — an **open, local alternative to cloud design
-canvases** like Claude Design. Design work happens inside the chat: you keep a
-live browser preview of your own running app beside the conversation, point at
-what you want changed, and the agent edits the real project while you watch.
+An extension for OpenChamber — an **open, local alternative to Claude Design**.
+Design work happens inside the chat: you keep a live browser preview of your own
+running app beside the conversation, point at what you want changed, and the
+agent edits the real project while you watch.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![OpenChamber engine](https://img.shields.io/badge/openchamber-%E2%89%A5%202.2.0-4b5563)](package.json)
@@ -13,17 +13,17 @@ what you want changed, and the agent edits the real project while you watch.
 
 ## What this is for
 
-Design work in a cloud canvas means the screens live in someone else's product:
-you generate artboards there, and your actual application is somewhere else. Later
-you export them and try to make the real code match.
+Design work in Claude Design means the screens live in someone else's product:
+you generate artboards there, and your actual application is somewhere else.
+Later you export them and try to make the real code match.
 
-OpenChamber Design Studio is the **open, local counterpart to those cloud design
-tools**. It runs inside OpenChamber, opens a real Chrome window at your own dev
-server, and lets you point at what you want changed while the agent edits the real
+OpenChamber Design Studio is the **open, local counterpart to Claude Design**.
+It runs inside OpenChamber, opens a real Chrome window at your own dev server,
+and lets you point at what you want changed while the agent edits the real
 project in your repository. Your work is never uploaded, no vendor canvas holds
 it, and the model is whichever one your OpenChamber setup already uses.
 
-| | Cloud design canvas (e.g. Claude Design) | OpenChamber Design Studio |
+| | Claude Design | OpenChamber Design Studio |
 | --- | --- | --- |
 | Where the screens live | In the vendor's product, on their canvas | In your project on disk, in your git repo |
 | What you are editing | Artboards generated inside that canvas | Your real running app, through a real Chrome window |
@@ -32,8 +32,8 @@ it, and the model is whichever one your OpenChamber setup already uses.
 | Source | Vendor-hosted, closed | Open source (MIT), runs locally |
 
 The comparison is qualitative and, deliberately, the difference that matters is
-structural rather than a feature count: local, open and on your own app. Cloud
-design products move fast, so treat the left column as "as of 2026-10-14".
+structural rather than a feature count: local, open and on your own app. Claude
+Design moves fast, so treat the left column as "as of 2026-10-14".
 
 To be precise about lineage: this is not a wrapper around
 [OpenDesign](https://github.com/nexu-io/open-design). Its design-system presets

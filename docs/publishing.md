@@ -19,8 +19,8 @@ Set the repository **description** (the one line under the repo name) to lead
 with what it is for, not with the technology:
 
 ```text
-Open, local alternative to cloud design canvases — point at your running app in
-the chat and let the agent change it. An extension for OpenChamber.
+Open, local alternative to Claude Design — point at your running app in the chat
+and let the agent change it. An extension for OpenChamber.
 ```
 
 Keep the README's first screen doing the same job: title, one sentence naming the
