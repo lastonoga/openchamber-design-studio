@@ -90,13 +90,12 @@ section as a compact row with the Start/Stop control, the Design Mode toggle and
 the session status. The mode is per-session and persisted in host storage, so a
 session that was started as a design session reopens with the widget on.
 
-**Work in one screen — the mini chat.** Run `/design` inside a mini-chat window
-and it becomes the design chat: the live Chrome window opens for it, the project
-reference chip lands in its composer, and every ⌘-click pick is attached there
-too — no window juggling. The `/design` invocation is what binds picks to a
-window: run it again in another chat and the picks follow that chat; switching
-back is one command. (The chat's Work Status row keeps working as before in the
-main window.)
+**Mini chat.** Run `/design` inside a mini-chat window and it starts the design
+session for that chat: the live Chrome window opens and the project reference
+chip lands in the mini composer. Picked-element chips currently attach through
+the main window's Work Status row (the host force-recycles hidden extension
+frames after 20 seconds, so a mini-chat pick bridge needs a host-side
+persistent surface there — tracked upstream).
 
 ![The Design Mode row in a chat's Work Status section, showing the toggle, the session status, and a hint to Cmd-click an element in the live preview.](docs/screenshots/feature-design-mode-status-1280.png)
 
@@ -121,9 +120,8 @@ outer markup, computed styles and the page URL. The chip's text reaches the mode
 its `data` payload is echoed back byte-for-byte to the extension. Hovering a
 reference row briefly re-flashes the matching element in the live window.
 
-Picks attach to the chat whose `/design` is bound to the live window (see
-above): in a mini chat the chips land in the mini composer, so picking and
-prompting happen on one screen. Pick feedback composites above the page's own
+Picks attach through the chat whose Work Status row is bound to the live
+window (the main window). Pick feedback composites above the page's own
 modals and dialogs, and elements inside shadow DOM resolve to the element you
 actually clicked.
 

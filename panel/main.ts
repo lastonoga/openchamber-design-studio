@@ -70,8 +70,6 @@ import {
   type ScaffoldResult,
   type ServerStartResult,
   type StudioConfig,
-  claimPickBridge,
-  releasePickBridge,
 } from './api.ts';
 import { DIRECTIONS, type DirectionId } from './craft.ts';
 import {
@@ -840,72 +838,17 @@ async function addToChat(pick: TrackedPick): Promise<void> {
 // ---- the pick→chat bridge ----
 //
 // `host.attach` delivers a chip into the composer of the window that hosts the
-// panel frame making the call — there is no cross-window targeting. When
-// `/design` runs inside a chat window (the mini chat included), the host mounts
-// a hidden command pane there; while THIS pane holds the bridge it claims the
-// service's exclusive pick ownership, attaches every pick into its own
-// window's composer, and stays alive until Design Mode is off (the live window
-// closes). The always-running Work Status row reads `bridgeActive` from
-// `/state` and stands down meanwhile — one pick, one chip, one window.
-
-let bridgeToken: string | null = null;
-let bridgeHeld = false;
-
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Hold the bridge until Design Mode is off; resolves to null (no chip). */
-async function holdPickBridge(): Promise<null> {
-  if (bridgeHeld) return null;
-  bridgeHeld = true;
-  try {
-    while (state.mode.on) {
-      try {
-        const claim = await claimPickBridge(bridgeToken ?? undefined);
-        if (!claim.ok || !claim.token) break;
-        bridgeToken = claim.token;
-        const stateData = await getState();
-        state.url = stateData.url;
-        state.title = stateData.title;
-        state.windowOpen = stateData.windowOpen;
-        if (stateData.lastPick && stateData.pickSeq > state.lastSeq) {
-          state.lastSeq = stateData.pickSeq;
-          await addToChat({ ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: new Date() });
-        }
-        // The live window closing IS Design Mode going off (mirrored by the
-        // row's own poll); end the bridge with it.
-        if (!stateData.windowOpen) break;
-      } catch {
-        /* a transient service error must not drop the bridge */
-      }
-      await delay(700);
-    }
-  } finally {
-    bridgeHeld = false;
-    const token = bridgeToken;
-    bridgeToken = null;
-    if (token) void releasePickBridge(token).catch(() => undefined);
-  }
-  return null;
-}
-
-/**
- * The resolve handler doubles as the bridge starter: `/design` inside a chat
- * window turns Design Mode on AND keeps this frame alive as the pick bridge,
- * so every subsequent Cmd/Ctrl-click in the live window lands in THIS chat's
- * composer — the mini chat included, which has no Work Status row of its own.
- */
-async function resolveOrBridge(request: { args: string }): Promise<null | Awaited<ReturnType<typeof buildModeChip>>> {
-  const chip = await resolveDesignCommand(request.args);
-  if (!state.mode.on) return chip;
-  if (bridgeHeld) return chip;
-  try {
-    const stateData = await getState();
-    if (stateData.bridgeActive) return chip;
-  } catch {
-    /* the service may be mid-restart: try to claim anyway */
-  }
-  return holdPickBridge();
-}
+// panel frame making the call — there is no cross-window targeting, and every
+// hidden frame the host mounts for a slash command is force-unmounted after
+// `GUEST_REQUEST_TIMEOUT_MS` (20s, packages/ui/src/lib/guests/run-command.ts),
+// so a hidden pane CANNOT serve as a long-lived pick bridge. `/design` therefore
+// answers immediately: Design Mode is bound to the live window, and picks
+// attach through the chat's Work Status row. Routing picks into a mini chat
+// requires a host-side persistent surface there (tracked upstream).
+//
+// The service-side claim (service/bridge-claim.ts, POST /bridge, `bridgeActive`
+// in /state) stays: it is the coordination point the row already honors for
+// whichever long-lived surface eventually owns the mini-chat bridge.
 
 // ---- project config ----
 
@@ -3369,7 +3312,7 @@ async function main(): Promise<void> {
 
   // The `/design` resolver: valid on the panel and page surfaces (the ones that
   // carry `commands`). Registered once, before the host asks.
-  host.onResolve((request) => resolveOrBridge(request));
+  host.onResolve((request) => resolveDesignCommand(request.args));
 
   let started = false;
   host.onReady((context: HostReadyContext) => {
