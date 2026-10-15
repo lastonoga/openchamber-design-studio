@@ -9,9 +9,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const approved='/private/var/folders/hx/6ykzfqb5519dsfc25bzxxrzc0000gn/T/opencode';
 const scratch=await mkdtemp(path.join(await access(approved).then(()=>approved,()=>tmpdir()),'live-canvas-breaker-'));
-await mkdir(path.join(scratch,'service'));
+await mkdir(path.join(scratch,'service'));await mkdir(path.join(scratch,'viewer-client/src'),{recursive:true});
 for(const file of ['browser','artifact-context','viewer-server','viewer-ui'])await cp(path.join(root,'service',file+'.ts'),path.join(scratch,'service',file+'.ts'));
 await cp(path.join(root,'shared'),path.join(scratch,'shared'),{recursive:true});
+// Stock controller + compiled asset module are real imports of viewer-ui.ts.
+await cp(path.join(root,'viewer-client/src/canvas-controller.js'),path.join(scratch,'viewer-client/src/canvas-controller.js'));
+await cp(path.join(root,'viewer-client/src/canvas-controller.d.ts'),path.join(scratch,'viewer-client/src/canvas-controller.d.ts'));
+await cp(path.join(root,'service/viewer-assets.generated.ts'),path.join(scratch,'service/viewer-assets.generated.ts'));
 await symlink(path.join(root,'node_modules'),path.join(scratch,'node_modules'));
 const mutant=process.env.LIVE_CANVAS_MUTANT;
 async function mutate(file:string,from:string,to:string){const location=path.join(scratch,'service',file+'.ts'),source=await readFile(location,'utf8');assert.equal(source.split(from).length-1,1,'one scratch guard match');await writeFile(location,source.replace(from,to));}

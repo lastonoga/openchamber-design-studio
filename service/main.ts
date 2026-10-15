@@ -17,6 +17,7 @@ import path from 'node:path';
 import { readStudioConfig, writeStudioConfig } from './studio-config.ts';
 import { ensureDevServer, getDevServerStatus, isLoopbackUrl, stopDevServer } from './project-server.ts';
 import { ensureBrowser, getBrowser, stopBrowser } from './surface.ts';
+import { BridgeClaims } from './bridge-claim.ts';
 import { reapOrphanChrome } from './browser.ts';
 import { handleBrowserControl } from './browser-control.ts';
 import { handleVerifyRequest } from './verify-routes.ts';
@@ -87,6 +88,9 @@ async function newestMtime(dir: string, entryAbs: string): Promise<number> {
   }
   return newest;
 }
+
+// Exclusive pick-bridge ownership: one chat window at a time attaches picks.
+const bridge = new BridgeClaims();
 
 const server = http.createServer(async (req, res) => {
   const auth = req.headers['authorization'];
@@ -394,10 +398,39 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/state') {
       const target = getBrowser();
       if (!target) {
-        sendJson(res, 200, { url: '', title: '', lastPick: null, pickSeq: 0, windowOpen: false });
+        sendJson(res, 200, { url: '', title: '', lastPick: null, pickSeq: 0, windowOpen: false, bridgeActive: bridge.active() });
         return;
       }
-      sendJson(res, 200, (await target.state()) as unknown as Json);
+      const state = (await target.state()) as { bridgeActive?: boolean };
+      state.bridgeActive = bridge.active();
+      sendJson(res, 200, state as unknown as Json);
+      return;
+    }
+
+    // Pick-bridge ownership (see service/bridge-claim.ts). The hidden pane that
+    // /design mounts inside a chat window claims here and heartbeats; every
+    // panel reads `bridgeActive` from /state and stands down while a bridge
+    // holds the picks, so one pick becomes exactly one chip in one window.
+    if (url.pathname === '/bridge') {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'POST required' });
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await readBody(req));
+      } catch {
+        sendJson(res, 400, { error: 'body must be JSON' });
+        return;
+      }
+      const body = parsed as { token?: unknown; release?: unknown } | null;
+      if (body?.release === true) {
+        const released = typeof body.token === 'string' ? bridge.release(body.token) : false;
+        sendJson(res, 200, { ok: released, bridgeActive: bridge.active() });
+        return;
+      }
+      const result = bridge.claim(typeof body?.token === 'string' ? body.token : undefined);
+      sendJson(res, 200, result as unknown as Json);
       return;
     }
 

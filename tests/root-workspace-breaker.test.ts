@@ -20,7 +20,7 @@ const mutant = process.env.ROOT_WORKSPACE_BREAKER_MUTANT;
 assert.ok(mutant === undefined || mutant === 'restore-isolation-write' || mutant === 'keep-old-plugin', 'known scratch mutant');
 await mkdir(path.join(scratch, 'panel'));
 await mkdir(path.join(scratch, 'service'));
-for (const name of ['api', 'compose', 'craft', 'harness', 'main', 'mode', 'reference-draft', 'settings', 'tokens']) {
+for (const name of ['api', 'attach-dialog', 'compose', 'craft', 'harness', 'main', 'mode', 'reference-draft', 'settings', 'tokens']) {
   await cp(path.join(root, 'panel', `${name}.ts`), path.join(scratch, 'panel', `${name}.ts`));
 }
 await cp(path.join(root, 'shared'), path.join(scratch, 'shared'), { recursive: true });

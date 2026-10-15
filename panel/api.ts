@@ -69,6 +69,11 @@ export type LiveState = {
   lastPick: PickPayload | null;
   pickSeq: number;
   windowOpen: boolean;
+  /**
+   * Another panel (the hidden pane `/design` mounts inside a chat window) is
+   * the pick→chat bridge right now: this panel must not attach picks too.
+   */
+  bridgeActive?: boolean;
 };
 
 /** What `POST /open` answers after opening/navigating the real window. */
@@ -145,6 +150,22 @@ export function getServerStatus(dir: string): Promise<ServerStatus> {
 /** Live window state: current page, pick mode, window open/closed. */
 export function getState(): Promise<LiveState> {
   return callService<LiveState>('/state');
+}
+
+/**
+ * Claim (or heartbeat) the exclusive pick→chat bridge. Called by the hidden
+ * pane `/design` mounts inside a chat window: while it holds a warm claim,
+ * every OTHER panel stands down, so each Cmd/Ctrl-click becomes exactly one
+ * chip in the window that owns the bridge. `token` renews an existing claim;
+ * omit it to take ownership.
+ */
+export function claimPickBridge(token?: string): Promise<{ ok: boolean; bridgeActive?: boolean; token?: string; ttlMs?: number }> {
+  return callService('/bridge', undefined, 'POST', JSON.stringify(token ? { token } : {}));
+}
+
+/** Give the bridge up (the holding pane is exiting). Harmless if already gone. */
+export function releasePickBridge(token: string): Promise<{ ok: boolean; bridgeActive?: boolean }> {
+  return callService('/bridge', undefined, 'POST', JSON.stringify({ release: true, token }));
 }
 
 /**

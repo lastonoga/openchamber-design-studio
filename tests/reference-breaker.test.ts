@@ -39,7 +39,7 @@ const approvedTemp = '/private/var/folders/hx/6ykzfqb5519dsfc25bzxxrzc0000gn/T/o
 const tempRoot = await access(approvedTemp).then(() => approvedTemp, () => tmpdir());
 const scratch = await mkdtemp(join(tempRoot, 'reference-breaker-'));
 await mkdir(join(scratch, 'panel'));
-for (const name of ['api', 'compose', 'craft', 'harness', 'main', 'mode', 'reference-draft', 'settings', 'tokens']) {
+for (const name of ['api', 'attach-dialog', 'compose', 'craft', 'harness', 'main', 'mode', 'reference-draft', 'settings', 'tokens']) {
   await cp(join(root, 'panel', `${name}.ts`), join(scratch, 'panel', `${name}.ts`));
 }
 await cp(join(root, 'shared'), join(scratch, 'shared'), { recursive: true });

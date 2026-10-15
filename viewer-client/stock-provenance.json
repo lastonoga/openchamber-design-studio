@@ -1,0 +1,21 @@
+{
+  "asOf": "2026-10-14",
+  "generator": {
+    "package": "shadcn",
+    "version": "4.21.4",
+    "preset": "nova",
+    "base": "base",
+    "packageIntegrity": "sha512-YYfn/hsHbRH2mGwnKBx9tk+DjTQH+RUMS5iCxjKzwzuJ5uoHPqLOFUCJSeX0sXfrcBSfgQaXiOLGKNLjlIQxxw=="
+  },
+  "registry": "https://ui.shadcn.com/r/styles/base-nova/",
+  "files": {
+    "viewer-client/src/components/ui/button.tsx": { "sha256": "313353436d0fcc8e44ab470adb614b9fd013d28626f624328ea0d66d41a6c81b" },
+    "viewer-client/src/components/ui/toggle.tsx": { "sha256": "039be815aed401e7e652271040fad53286ffa734743381a65f84ac61cb2ea4db" },
+    "viewer-client/src/components/ui/toggle-group.tsx": { "sha256": "ea72fb41374a94a1585e282cc77b4c90de0c50715f912286646ec24f4c092c2d" },
+    "viewer-client/src/components/ui/dropdown-menu.tsx": { "sha256": "ffd69006ed9c79e16ffefffbf8a9ebbf1c34ca38f40cb9939c946a71943127d7" },
+    "viewer-client/src/components/ui/tooltip.tsx": { "sha256": "100101631756e1bebc1f1831e1642b26cd11a6a6c4affb6c638c42001dc14e83" },
+    "viewer-client/src/lib/utils.ts": { "sha256": "14300d758170c270c75b057f38fedb3793a5920ea872f0477e29fb131185e8a7" },
+    "viewer-client/src/index.css": { "sha256": "9bde270cb8d0493a24091df8ae292e3a2b3484f91d738fa70a037866fe206d48" },
+    "viewer-client/components.json": { "sha256": "156858e2da20785ac0f1853580c7e34d5b8496f519e8839d2176e85947d4f779" }
+  }
+}

@@ -11,9 +11,15 @@ const root=fileURLToPath(new URL('../',import.meta.url));
 const original=process.env.FIT_BREAKER_ORIGINAL;
 const sourceRoot=original||root;
 const scratch=await mkdtemp(path.join(tmpdir(),'fit-page-breaker-'));
-await mkdir(path.join(scratch,'service'));
+await mkdir(path.join(scratch,'service'));await mkdir(path.join(scratch,'viewer-client/src'),{recursive:true});
 for(const file of ['browser','artifact-context','viewer-server','viewer-ui'])await cp(path.join(sourceRoot,'service',file+'.ts'),path.join(scratch,'service',file+'.ts'));
 await cp(path.join(sourceRoot,'shared'),path.join(scratch,'shared'),{recursive:true});
+// The stock controller and the compiled asset module are real imports of
+// viewer-ui.ts; copy both so the scratch tree resolves (assets are inert
+// strings under a Node import).
+await cp(path.join(sourceRoot,'viewer-client/src/canvas-controller.js'),path.join(scratch,'viewer-client/src/canvas-controller.js'));
+await cp(path.join(sourceRoot,'viewer-client/src/canvas-controller.d.ts'),path.join(scratch,'viewer-client/src/canvas-controller.d.ts'));
+await cp(path.join(sourceRoot,'service/viewer-assets.generated.ts'),path.join(scratch,'service/viewer-assets.generated.ts'));
 await symlink(path.join(root,'node_modules'),path.join(scratch,'node_modules'));
 let browserSource=await readFile(path.join(scratch,'service/browser.ts'),'utf8');
 const mutant=process.env.FIT_BREAKER_MUTANT;

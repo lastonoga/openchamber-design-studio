@@ -355,7 +355,33 @@ function buttonName(button: number): string {
  * Being fixed with pointer events off, it cannot shift layout or steal input.
  */
 export const PICK_SCRIPT = `(() => {
-  if (window.__dsPickerInstalled) return;
+  // Arming and authority are SEPARATE concerns. Server-side authority is the
+  // only security boundary: a pick counts only if its __dsPick binding call
+  // arrives from the artifact frame's execution context (Runtime.bindingCalled
+  // -> contexts.matches(context.artifact(), session, executionContextId)).
+  // window.__dsTrustedArtifact is merely the client-side arming signal, set by
+  // the post-attach Runtime.evaluate in initializeArtifact; while unset this
+  // script BUFFERS pick payloads in window.__dsPickPending instead of sending,
+  // and the same evaluate re-runs this script (idempotent) to flush them once.
+  function armed() { return !!window.__dsTrustedArtifact; }
+  function sendOrBuffer(json) {
+    if (window.__dsPick && armed()) { window.__dsPick(json); return; }
+    if (!window.__dsPickPending) window.__dsPickPending = [];
+    // Small cap: a never-armed frame (any non-top iframe the artifact page
+    // embeds) cannot buffer unboundedly.
+    if (window.__dsPickPending.length < 10) window.__dsPickPending.push(json);
+  }
+  function flushPending() {
+    if (!armed() || !window.__dsPick) return;
+    var pending = window.__dsPickPending;
+    window.__dsPickPending = null;
+    if (pending) for (var i = 0; i < pending.length; i++) window.__dsPick(pending[i]);
+  }
+  // Idempotent re-run on navigation (fresh document) AND on arming (the
+  // initializeArtifact evaluate re-runs this script after setting the trust
+  // flag): an already-installed picker only flushes anything buffered while
+  // the frame was still unarmed.
+  if (window.__dsPickerInstalled) { flushPending(); return; }
   window.__dsPickerInstalled = true;
   function selectorFor(el) {
     if (el.id) return '#' + CSS.escape(el.id);
@@ -418,6 +444,15 @@ export const PICK_SCRIPT = `(() => {
     outline.id = '__ds-pick-outline';
     outline.setAttribute('data-ds-overlay', 'pick');
     outline.setAttribute('aria-hidden', 'true');
+    // Top-layer promotion: a body-mounted fixed element loses compositing to
+    // any native <dialog>.showModal() or popover, whatever its z-index. Giving
+    // the outline popover="manual" lets us move it into the document's top
+    // layer (ordered above every dialog) via showPopover(). A manual popover
+    // never auto-dismisses, takes no focus and ignores Escape — hover/click
+    // semantics are unchanged. Browsers without the Popover API, or any
+    // showPopover()/hidePopover() failure, simply keep the fixed + max
+    // z-index fallback below.
+    outline.setAttribute('popover', 'manual');
     var s = outline.style;
     s.position = 'fixed';
     s.pointerEvents = 'none';
@@ -431,6 +466,16 @@ export const PICK_SCRIPT = `(() => {
     s.width = '0px';
     s.height = '0px';
     s.display = 'none';
+    // Neutralise the popover UA sheet ([popover]{position:fixed;inset:0;
+    // width/height:fit-content;margin:auto;border:solid;padding:0.25em;
+    // overflow:auto}) so a promoted outline renders exactly like the fallback:
+    // inset/size/margin/left/top are already overridden inline, these four
+    // cover the rest and are inert while the element is a plain fixed div.
+    s.right = 'auto';
+    s.bottom = 'auto';
+    s.margin = '0';
+    s.padding = '0';
+    s.overflow = 'visible';
     outlineLabel = document.createElement('div');
     var ls = outlineLabel.style;
     ls.position = 'absolute';
@@ -462,11 +507,25 @@ export const PICK_SCRIPT = `(() => {
     else outline.removeAttribute('data-ds-picked');
   }
 
+  // Top-layer membership tracks outline visibility: promote on show, retire on
+  // hide. Every failure keeps the plain fixed + z-index fallback behaviour.
+  function showTopLayer() {
+    try {
+      if (outline && outline.showPopover && !outline.matches(':popover-open')) outline.showPopover();
+    } catch (e) { /* unavailable or refused: fixed + z-index fallback */ }
+  }
+  function hideTopLayer() {
+    try {
+      if (outline && outline.hidePopover && outline.matches(':popover-open')) outline.hidePopover();
+    } catch (e) { /* already out of the top layer */ }
+  }
+
   function place(el) {
     ensureOutline();
     var rect = el.getBoundingClientRect();
     var s = outline.style;
     s.display = 'block';
+    showTopLayer();
     s.top = rect.top + 'px';
     s.left = rect.left + 'px';
     s.width = rect.width + 'px';
@@ -488,6 +547,7 @@ export const PICK_SCRIPT = `(() => {
   }
 
   function hideOutline() {
+    hideTopLayer();
     if (outline) outline.style.display = 'none';
     setCursor(false);
   }
@@ -574,11 +634,38 @@ export const PICK_SCRIPT = `(() => {
     return true;
   };
 
-  document.addEventListener('click', function (e) {
+  // Registered on 'window' capture, not document capture: window precedes
+  // document in the capture propagation path, so a page that installs
+  // window-capture click interception (e.g.
+  // window.addEventListener('click', e=>e.stopImmediatePropagation(),
+  // {capture:true})) no longer trivially defeats the pick — with a
+  // document-only capture listener it always did, whatever the order.
+  // Measured history (probes 2026-10-14-pickfix-selection / -timing): the
+  // effective install USED to be the post-attach Runtime.evaluate in
+  // initializeArtifact (the document_start gate failed because the shell names
+  // the frame post-load), so a page script registering a window-capture
+  // stopImmediatePropagation interceptor during load preceded this listener
+  // and blocked the pick. This script now installs at document start for every
+  // non-top frame (see ARTIFACT_SCRIPTS), so on any document created AFTER
+  // registration — every reload/navigation (HMR included) — the listener
+  // registers before page scripts can. KNOWN RESIDUAL, measured (probe
+  // 2026-10-14-timing-verify, caseb pickDelta=0): an OOPIF can commit BEFORE
+  // addScriptToEvaluateOnNewDocument reaches it (seedArtifactLoader exists for
+  // exactly that race), so on the FIRST artifact load a page that installs a
+  // window-capture stopImmediatePropagation interceptor during its own load
+  // still precedes us and wins until the next navigation. The buffered payload
+  // means the early install can never produce a send the server would not
+  // honour anyway.
+  window.addEventListener('click', function (e) {
     // Cmd (metaKey) or Ctrl held: this click is a reference pick, not a
     // navigation. Anything else is an ordinary click and passes through.
     if (!(e.metaKey || e.ctrlKey)) return;
-    var el = e.target;
+    // Chrome retargets trusted clicks (and elementFromPoint) at an open
+    // shadow-root boundary, so e.target is the shadow HOST. The un-retargeted
+    // first entry of composedPath() is the actual shadow-INNER element the
+    // user clicked; fall back to e.target for non-composed/synthetic events.
+    var path = typeof e.composedPath === 'function' ? e.composedPath() : null;
+    var el = (path && path.length && path[0]) || e.target;
     if (!el || el.nodeType !== 1) return;
     if (inOverlay(el)) return;
     e.preventDefault();
@@ -596,7 +683,7 @@ export const PICK_SCRIPT = `(() => {
       styles: stylesFor(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
     };
-    if (window.__dsPick) window.__dsPick(JSON.stringify(payload));
+    sendOrBuffer(JSON.stringify(payload));
   }, true);
 })();`;
 
@@ -622,6 +709,29 @@ const ARTIFACT_BRIDGE = `(() => {
   for(const method of ['pushState','replaceState']){const original=history[method];history[method]=function(...args){const result=original.apply(this,args);emit('changed');return result;};}
   window.addEventListener('hashchange',()=>emit('changed'));window.addEventListener('popstate',()=>emit('changed'));
   window.addEventListener('load',()=>emit('changed'));document.addEventListener('DOMContentLoaded',()=>emit('changed'));
+  // Bubble phase preserves target/widget-owned shortcuts. Recognized browser
+  // zoom defaults are suppressed even when the renderer declines camera zoom.
+  document.addEventListener('keydown',e=>{
+    if(e.defaultPrevented||(!e.ctrlKey&&!e.metaKey)||e.altKey)return;
+    let action=null;
+    if(e.key==='+'||e.key==='='||e.code==='Equal'||e.code==='NumpadAdd')action='in';
+    else if(e.key==='-'||e.code==='Minus'||e.code==='NumpadSubtract')action='out';
+    else if(e.key==='0'||(!e.shiftKey&&(e.code==='Digit0'||e.code==='Numpad0')))action='reset';
+    if(!action)return;
+    e.preventDefault();window.__dsArtifactEvent(JSON.stringify({type:'camera-zoom',action}));
+  });
+  document.addEventListener('wheel',e=>{
+    if(e.defaultPrevented||(!e.ctrlKey&&!e.metaKey))return;
+    e.preventDefault();
+    if(![e.clientX,e.clientY,e.deltaY].every(Number.isFinite)||Math.abs(e.clientX)>8192||Math.abs(e.clientY)>8192||![0,1,2].includes(e.deltaMode))return;
+    // Application policy: numeric computed root line-height, otherwise16 CSS
+    // pixels per line; pages use this artifact's current CSS viewport height.
+    const line=parseFloat(getComputedStyle(document.documentElement).lineHeight);
+    const unit=e.deltaMode===1?(Number.isFinite(line)&&line>0?line:16):e.deltaMode===2?window.innerHeight:1;
+    const pixels=e.deltaY*unit;
+    if(!Number.isFinite(pixels)||!Number.isFinite(unit)||unit<=0)return;
+    window.__dsArtifactEvent(JSON.stringify({type:'camera-zoom',action:'wheel',deltaY:Math.max(-8192,Math.min(8192,pixels)),x:e.clientX,y:e.clientY}));
+  },{passive:false});
   let dirtyQueued=false,dirtyDuringSizing=false;
   const overlay=node=>node&&node.nodeType===1&&node.closest('[data-ds-overlay]');
   const dirty=()=>{if(window.__dsSizing){dirtyDuringSizing=true;return;}if(dirtyQueued)return;dirtyQueued=true;requestAnimationFrame(()=>{dirtyQueued=false;if(!window.__dsSizing)emit('height-dirty');});};
@@ -646,7 +756,22 @@ const ARTIFACT_BRIDGE = `(() => {
     e.preventDefault();window.__dsArtifactEvent(JSON.stringify({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX,deltaY:e.deltaY}));
   },{passive:false});
 })();`;
-const ARTIFACT_SCRIPTS = `if(window!==top && (window.__dsTrustedArtifact || window.name==='__dsArtifact')){${ARTIFACT_BRIDGE}\n${PICK_SCRIPT}\nif(!window.__dsProbe){${PROBE_SCRIPT}}}`;
+// Injection timing. Page.addScriptToEvaluateOnNewDocument (enable(), artifact-
+// context.ts) runs this at document start — BEFORE any page script — but the
+// old single gate (`__dsTrustedArtifact || name==='__dsArtifact'`) was false at
+// that moment for the artifact frame: the shell names the frame post-load
+// (SHELL_BRIDGE) and the trust flag is set only by the post-attach
+// Runtime.evaluate in initializeArtifact. The whole script therefore no-oped at
+// document start and the effective install lost the ordering race against page
+// scripts that install window-capture click interceptors. PICK_SCRIPT alone now
+// installs UNCONDITIONALLY in any non-top frame at document start; it cannot
+// send early because unarmed frames only buffer (see PICK_SCRIPT). The bridge
+// and probe keep the original gate and re-install via the post-attach evaluate.
+const ARTIFACT_SCRIPTS = `if(window!==top){
+  if(window.__dsTrustedArtifact || window.name==='__dsArtifact'){${ARTIFACT_BRIDGE}}
+  ${PICK_SCRIPT}
+  if((window.__dsTrustedArtifact || window.name==='__dsArtifact') && !window.__dsProbe){${PROBE_SCRIPT}}
+}`;
 const SHELL_BRIDGE = `(() => {
   const frame=document.getElementById('preview'); if(!frame||!window.__dsCanvas)return false;
   frame.name='__dsArtifact';
@@ -669,6 +794,12 @@ function validPick(value: unknown): value is PickedElement {
   if(!item.selector||!item.tag||!item.styles||typeof item.styles!=='object'||Array.isArray(item.styles)||Object.keys(item.styles).length>32)return false;
   if(Object.entries(item.styles).some(([key,text])=>key.length>64||typeof text!=='string'||text.length>2048))return false;
   return !!item.rect && ['x','y','width','height'].every(key=>Number.isFinite(item.rect[key as keyof typeof item.rect])&&Math.abs(item.rect[key as keyof typeof item.rect])<=1e7)&&item.rect.width>=0&&item.rect.height>=0;
+}
+
+function validCameraZoom(value:Record<string,unknown>):boolean{
+  if(typeof value.action!=='string'||!['in','out','reset','wheel'].includes(value.action))return false;
+  if(!['deltaY','x','y'].every(key=>value[key]===undefined||(typeof value[key]==='number'&&Number.isFinite(value[key])&&Math.abs(value[key])<=8192)))return false;
+  return value.action!=='wheel'||['deltaY','x','y'].every(key=>typeof value[key]==='number');
 }
 
 /**
@@ -929,10 +1060,19 @@ export class Browser {
         if(!context)return;
         if(context.matches(context.artifact(),session,params.executionContextId)) {
           if(params.name==='__dsPick'&&validPick(value)){this.lastPick=value;this.pickSeq+=1;}
-          if(params.name==='__dsArtifactEvent'&&value&&['dismiss','changed','height-dirty','wheel'].includes(value.type)){
+          if(params.name==='__dsArtifactEvent'&&value&&['dismiss','changed','height-dirty','wheel','camera-zoom'].includes(value.type)){
             if(value.type==='dismiss'&&this.canvasFlags.menu)void this.shellEval('__dsCanvas.dismissMenu()').catch(()=>undefined);
             if(value.type==='changed')void this.refreshArtifact();
             if(value.type==='height-dirty')this.queueLayout();
+            if(value.type==='camera-zoom'&&validCameraZoom(value)&&!this.captureInFlight){
+              const artifact=context.artifact();
+              void this.transaction(async()=>{
+                if(this.contexts!==context||context.artifact()!==artifact||this.captureInFlight)return;
+                if(value.action==='wheel'){
+                  await this.shellEval(`(()=>{const f=document.getElementById('preview'),r=f.getBoundingClientRect(),c=document.getElementById('canvas').getBoundingClientRect();if(![r.x,r.y,r.width,r.height,c.x,c.y,f.clientWidth,f.clientHeight].every(Number.isFinite)||r.width<=0||r.height<=0||f.clientWidth<=0||f.clientHeight<=0)return false;return typeof __dsCanvas.zoomCamera==='function'&&__dsCanvas.zoomCamera({action:'wheel',deltaY:${value.deltaY},x:r.x+${value.x}*r.width/f.clientWidth-c.x,y:r.y+${value.y}*r.height/f.clientHeight-c.y})})()`);
+                }else await this.shellEval(`typeof __dsCanvas.zoomCamera==='function'&&__dsCanvas.zoomCamera({action:${JSON.stringify(value.action)}})`);
+              }).catch(()=>undefined);
+            }
             if(value.type==='wheel'&&[value.x,value.y,value.deltaX,value.deltaY].every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=8192)){
               const artifact=context.artifact();
               void this.transaction(async()=>{if(this.layoutState.mode!=='page'||context.artifact()!==artifact)return;

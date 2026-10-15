@@ -41,7 +41,9 @@ test('declared entries match the shipped files: panel row, page, command and sta
   assert.equal(contributes.panel.dock, undefined, 'no dock without service.surface');
   assert.equal(contributes.panel.size, undefined, 'no size without service.surface');
 
-  // The `/design` slash command stays; the "+"-menu attach dialog is gone.
+  // The `/design` slash command stays; the "+"-menu attach dialog is gone —
+  // Design Mode is started with `/design` inside the target chat, whose hidden
+  // resolve frame doubles as the pick→chat bridge.
   assert.deepEqual(contributes.commands, [
     { name: 'design', description: 'Toggle Design Mode and attach design context' },
   ]);

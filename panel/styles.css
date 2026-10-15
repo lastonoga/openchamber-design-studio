@@ -903,3 +903,76 @@ button.on { background: var(--oc-selection); color: var(--oc-selection-fg); bord
   .ds-ds-panel { animation: none; }
   .ds-server-control.is-loading .ds-server-icon { animation: none; }
 }
+
+/* ---- attach dialog (Mini composer "+" menu) ---- */
+
+.ds-attach-dialog { align-items: stretch; }
+.ds-attach-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  max-width: 34rem;
+  margin: 0 auto;
+  width: 100%;
+}
+.ds-attach-title {
+  font: 600 1.25rem/1.2 var(--oc-font-display);
+  margin: 0;
+  color: var(--oc-fg);
+}
+.ds-attach-copy { margin: 0; color: var(--oc-muted); line-height: 1.5; }
+.ds-attach-hint {
+  margin: 4px 0 0;
+  color: var(--oc-fg);
+  font-weight: 500;
+}
+.ds-attach-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.ds-attach-error {
+  border: 1px solid var(--oc-error);
+  border-radius: var(--oc-radius);
+  padding: 10px 12px;
+  color: var(--oc-fg);
+  line-height: 1.5;
+}
+.ds-attach-success {
+  margin: 0;
+  color: var(--oc-success-text);
+  font-weight: 500;
+}
+.ds-attach-pick {
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: var(--oc-muted-surface);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ds-attach-pick-selector {
+  font-family: var(--oc-mono);
+  font-size: 0.85rem;
+  color: var(--oc-fg);
+  overflow-wrap: anywhere;
+}
+.ds-attach-pick-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.ds-attach-pick-tag {
+  font-size: 0.75rem;
+  color: var(--oc-muted);
+  background: var(--oc-hover);
+  border-radius: 999px;
+  padding: 2px 8px;
+  overflow-wrap: anywhere;
+}
+.ds-attach-pick-text {
+  color: var(--oc-fg);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ds-attach-pick-url {
+  font-family: var(--oc-mono);
+  font-size: 0.75rem;
+  color: var(--oc-muted);
+  overflow-wrap: anywhere;
+}

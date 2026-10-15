@@ -8,7 +8,7 @@ export async function startViewerServer(config: ViewerConfig): Promise<{ url: st
   let html = renderViewerHtml(config);
   html = html.replace('<meta charset="utf-8">', '<meta charset="utf-8"><meta name="referrer" content="no-referrer">');
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => "'sha256-" + createHash('sha256').update(match[1]!).digest('base64') + "'");
-  const csp = `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'unsafe-inline'; frame-src http: https:; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+  const csp = `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'unsafe-inline'; font-src data:; frame-src http: https:; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
   let host = '';
   const server = createServer((req, res) => {
     const status = req.headers.host !== host ? 403 : req.url !== capability ? 404 : req.method !== 'GET' ? 405 : 200;

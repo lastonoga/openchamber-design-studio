@@ -51,7 +51,6 @@ import {
   projectMeta,
   projectReady,
   projectRows,
-  referenceText,
   resolveDesignTarget,
   scaffoldProject,
   shouldStopDevServer,
@@ -71,6 +70,8 @@ import {
   type ScaffoldResult,
   type ServerStartResult,
   type StudioConfig,
+  claimPickBridge,
+  releasePickBridge,
 } from './api.ts';
 import { DIRECTIONS, type DirectionId } from './craft.ts';
 import {
@@ -107,6 +108,7 @@ import {
 } from './mode.ts';
 import type { DesignSystemPreset } from '../shared/design-systems.ts';
 import { addDraftReference, removeDraftReference, buildReferenceSubmission, type DraftReference } from './reference-draft.ts';
+import { buildAttachPayload } from './attach-dialog.ts';
 
 const POLL_MS = 900;
 
@@ -828,18 +830,81 @@ async function startNewDesign(): Promise<void> {
  */
 async function addToChat(pick: TrackedPick): Promise<void> {
   try {
-    await host.attach({
-      providerId: 'design-studio',
-      id: `element-${pick.seq}`,
-      title: pick.selector,
-      url: pick.url,
-      text: referenceText(pick, pick.url, pick.pickedAt),
-      data: { selector: pick.selector, tag: pick.tag, classes: pick.classes, snippet: pick.outerHTML, styles: pick.styles, url: pick.url },
-    });
+    await host.attach(buildAttachPayload(pick, pick.seq, pick.url, pick.pickedAt));
     await host.toast({ kind: 'success', message: 'Reference added to the chat composer.' });
   } catch (error) {
     await host.toast({ kind: 'error', message: `Could not attach: ${error instanceof Error ? error.message : String(error)}` });
   }
+}
+
+// ---- the pick→chat bridge ----
+//
+// `host.attach` delivers a chip into the composer of the window that hosts the
+// panel frame making the call — there is no cross-window targeting. When
+// `/design` runs inside a chat window (the mini chat included), the host mounts
+// a hidden command pane there; while THIS pane holds the bridge it claims the
+// service's exclusive pick ownership, attaches every pick into its own
+// window's composer, and stays alive until Design Mode is off (the live window
+// closes). The always-running Work Status row reads `bridgeActive` from
+// `/state` and stands down meanwhile — one pick, one chip, one window.
+
+let bridgeToken: string | null = null;
+let bridgeHeld = false;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Hold the bridge until Design Mode is off; resolves to null (no chip). */
+async function holdPickBridge(): Promise<null> {
+  if (bridgeHeld) return null;
+  bridgeHeld = true;
+  try {
+    while (state.mode.on) {
+      try {
+        const claim = await claimPickBridge(bridgeToken ?? undefined);
+        if (!claim.ok || !claim.token) break;
+        bridgeToken = claim.token;
+        const stateData = await getState();
+        state.url = stateData.url;
+        state.title = stateData.title;
+        state.windowOpen = stateData.windowOpen;
+        if (stateData.lastPick && stateData.pickSeq > state.lastSeq) {
+          state.lastSeq = stateData.pickSeq;
+          await addToChat({ ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: new Date() });
+        }
+        // The live window closing IS Design Mode going off (mirrored by the
+        // row's own poll); end the bridge with it.
+        if (!stateData.windowOpen) break;
+      } catch {
+        /* a transient service error must not drop the bridge */
+      }
+      await delay(700);
+    }
+  } finally {
+    bridgeHeld = false;
+    const token = bridgeToken;
+    bridgeToken = null;
+    if (token) void releasePickBridge(token).catch(() => undefined);
+  }
+  return null;
+}
+
+/**
+ * The resolve handler doubles as the bridge starter: `/design` inside a chat
+ * window turns Design Mode on AND keeps this frame alive as the pick bridge,
+ * so every subsequent Cmd/Ctrl-click in the live window lands in THIS chat's
+ * composer — the mini chat included, which has no Work Status row of its own.
+ */
+async function resolveOrBridge(request: { args: string }): Promise<null | Awaited<ReturnType<typeof buildModeChip>>> {
+  const chip = await resolveDesignCommand(request.args);
+  if (!state.mode.on) return chip;
+  if (bridgeHeld) return chip;
+  try {
+    const stateData = await getState();
+    if (stateData.bridgeActive) return chip;
+  } catch {
+    /* the service may be mid-restart: try to claim anyway */
+  }
+  return holdPickBridge();
 }
 
 // ---- project config ----
@@ -3063,7 +3128,10 @@ export async function applyState(stateData: LiveState): Promise<void> {
     state.lastSeq = stateData.pickSeq;
     const pick: TrackedPick = { ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: new Date() };
     // Design Mode: a pick IS the instruction context — attach without asking.
-    if (state.mode.on) void addToChat(pick);
+    // Unless another panel owns the bridge right now (the hidden pane `/design`
+    // mounts inside a chat window): it attaches into ITS window's composer, and
+    // `lastSeq` is advanced above so this panel never replays the same pick.
+    if (state.mode.on && !stateData.bridgeActive) void addToChat(pick);
   }
   renderWindowStatus();
   // The user closed the live window by hand: that IS Design Mode going off. Flip
@@ -3301,7 +3369,7 @@ async function main(): Promise<void> {
 
   // The `/design` resolver: valid on the panel and page surfaces (the ones that
   // carry `commands`). Registered once, before the host asks.
-  host.onResolve((request) => resolveDesignCommand(request.args));
+  host.onResolve((request) => resolveOrBridge(request));
 
   let started = false;
   host.onReady((context: HostReadyContext) => {
