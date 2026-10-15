@@ -1,3 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-  <path d="M3 4.75A1.75 1.75 0 0 1 4.75 3h14.5A1.75 1.75 0 0 1 21 4.75v3.5A1.75 1.75 0 0 1 19.25 10H4.75A1.75 1.75 0 0 1 3 8.25v-3.5Zm0 10A1.75 1.75 0 0 1 4.75 13h6.5A1.75 1.75 0 0 1 13 14.75v4.5A1.75 1.75 0 0 1 11.25 21h-6.5A1.75 1.75 0 0 1 3 19.25v-4.5Zm12 0A1.75 1.75 0 0 1 16.75 13h2.5A1.75 1.75 0 0 1 21 14.75v4.5A1.75 1.75 0 0 1 19.25 21h-2.5A1.75 1.75 0 0 1 15 19.25v-4.5Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <!-- Lucide "palette" (v1.57.0), the same glyph the viewer toolbar's Design
+       Studio control and the design-system picker use. -->
+  <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/>
+  <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+  <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+  <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+  <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
 </svg>
