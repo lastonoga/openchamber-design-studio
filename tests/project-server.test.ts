@@ -249,11 +249,18 @@ test('stopDevServer is a no-op for a dir it did not start', async () => {
 
 /** A detached process that exits at once; its pid is then a DEAD process-group id. */
 async function deadGroupLeader(): Promise<number> {
+  // The child is unref'd, so it does not keep this process's event loop alive.
+  // Waiting for its `exit` therefore races the loop: when nothing else holds a
+  // handle (the common case here), the runner drains the loop before the child
+  // reports exit and cancels every remaining test in the file. Hold the loop
+  // until the exit has actually been observed.
+  const keepAlive = setInterval(() => {}, 50);
   const pgid = await new Promise<number>((resolve) => {
     const child = spawn('node', ['-e', 'process.exit(0)'], { detached: true, stdio: 'ignore' });
     child.unref();
     child.on('exit', () => resolve(child.pid!));
   });
+  clearInterval(keepAlive);
   const deadline = Date.now() + 2_000;
   while (Date.now() < deadline && !groupGone(pgid)) await delay(20);
   assert.equal(groupGone(pgid), true, 'the detached leader is gone, so the recorded group is dead');
