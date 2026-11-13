@@ -471,12 +471,24 @@ export type DesignTarget =
   | { kind: 'needs-project'; dir: string | null };
 
 /**
- * Whether `dir` lies inside `root` (or IS it). A plain prefix match on the
- * absolute paths the host reports, separated by `/` — no normalization, no
- * case folding: both strings come from the same host.
+ * Host APIs disagree on path separators on Windows: a session's working
+ * directory arrives with `/`, while a registered project's stored path keeps
+ * `\`. Compare directories on a normalized form so a project is found
+ * regardless of which API reported the path.
+ */
+export function normalizeDir(dir: string): string {
+  return dir.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * Whether `dir` lies inside `root` (or IS it). Separator-normalized: the two
+ * paths may come from different host APIs that format Windows paths
+ * differently. Case is left alone — the host is consistent about it.
  */
 export function pathContains(root: string, dir: string): boolean {
-  return dir === root || dir.startsWith(`${root}/`);
+  const r = normalizeDir(root);
+  const d = normalizeDir(dir);
+  return d === r || d.startsWith(`${r}/`);
 }
 
 /**
@@ -498,7 +510,8 @@ export function resolveDesignTarget(input: {
     : undefined;
   if (picked) return projectTarget(picked, input.rows);
   if (input.directory) {
-    const exact = input.projects.find((project) => project.directory === input.directory);
+    const dirNorm = normalizeDir(input.directory);
+    const exact = input.projects.find((project) => normalizeDir(project.directory) === dirNorm);
     if (exact) return projectTarget(exact, input.rows);
     let containing: RegisteredProject | undefined;
     for (const project of input.projects) {

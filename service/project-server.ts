@@ -24,7 +24,7 @@
 // to IPv4 while the dev server may bind IPv6 (`[::1]`) only. The panel already
 // surfaces that scaffold guidance, and the reachability probe here checks both
 // loopback literals so a server that came up on either one is still seen.
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -258,7 +258,9 @@ function portFromUrl(url: string): number | null {
 /** True while the process group still has a live member. */
 function groupAlive(pgid: number): boolean {
   try {
-    process.kill(-pgid, 0);
+    // Windows has no process groups: the recorded pgid is the leader's pid,
+    // and probing it directly is the whole-tree liveness check we can get.
+    process.kill(process.platform === 'win32' ? pgid : -pgid, 0);
     return true;
   } catch (error) {
     // ESRCH means no such group; EPERM means it exists but is not ours — alive.
@@ -269,14 +271,24 @@ function groupAlive(pgid: number): boolean {
 const execFileAsync = promisify(execFile);
 
 /**
- * Fingerprint of a live process: the `ps -o lstart=` line the OS reports for
- * it. Taken once when the service spawns a dev server and re-checked before
- * the recorded group is signalled or trusted, so a pid the OS later handed to
- * an unrelated process is never mistaken for ours. Returns null when the pid
- * cannot be found (the process is gone) or `ps` fails.
+ * Fingerprint of a live process: its start time, which the OS never reuses
+ * with the same pid. Unix reads the `ps -o lstart=` line; Windows asks
+ * PowerShell for `Process.StartTime.Ticks`. Taken once when the service spawns
+ * a dev server and re-checked before the recorded group is signalled or
+ * trusted, so a pid the OS later handed to an unrelated process is never
+ * mistaken for ours. Returns null when the pid cannot be found or the probe
+ * fails.
  */
 export async function readProcessIdentity(pid: number): Promise<string | null> {
   try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execFileAsync('powershell', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `(Get-Process -Id ${Math.trunc(pid)} -ErrorAction Stop).StartTime.Ticks`,
+      ]);
+      const line = stdout.trim();
+      return /^\d+$/.test(line) ? line : null;
+    }
     const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'lstart=']);
     const line = stdout.trim();
     return line === '' ? null : line;
@@ -302,6 +314,12 @@ async function verifyRecordIdentity(record: DevServerRecord): Promise<IdentityCh
 /** Send a signal to a whole process group; false when it is already gone. */
 function signalGroup(pgid: number, signal: NodeJS.Signals): boolean {
   try {
+    if (process.platform === 'win32') {
+      // No process groups on Windows: taskkill /T fells the leader's whole
+      // process tree, which is what the detached spawn created.
+      const result = spawnSync('taskkill', ['/pid', String(pgid), '/T', '/F'], { stdio: 'ignore' });
+      return result.status === 0;
+    }
     process.kill(-pgid, signal);
     return true;
   } catch {

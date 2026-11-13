@@ -12,7 +12,7 @@
 // mode: the window IS the live view. The agent still gets deterministic PNG
 // stills through `capture()`.
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -25,8 +25,36 @@ import { ArtifactContexts } from './artifact-context.ts';
 import type { ShellAuthority, DefaultContext } from './artifact-context.ts';
 import type { ViewerPage } from './viewer-ui.ts';
 
-const CHROME_PATH =
-  process.env.DS_CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+/**
+ * The Chrome binary to launch. `DS_CHROME_PATH` always wins. Without it the
+ * standard install location per platform is probed, so Windows and Linux do
+ * not depend on the macOS default.
+ */
+function defaultChromePath(): string {
+  if (process.platform === 'win32') {
+    // Guest services inherit a WHITELISTED environment (host-side
+    // inheritedServiceEnv): PROGRAMFILES is not in it, SYSTEMDRIVE and
+    // LOCALAPPDATA are. Anchor the standard install paths on those — never on
+    // a variable the host may have scrubbed.
+    const drive = process.env['SYSTEMDRIVE'] ?? 'C:';
+    const local = process.env['LOCALAPPDATA'];
+    const candidates = [
+      `${drive}\\Program Files\\Google\\Chrome\\Application\\chrome.exe`,
+      `${drive}\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`,
+      ...(local ? [path.join(local, 'Google/Chrome/Application/chrome.exe')] : []),
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return candidates[0]!;
+  }
+  if (process.platform === 'linux') {
+    return '/usr/bin/google-chrome';
+  }
+  return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+}
+
+const CHROME_PATH = process.env.DS_CHROME_PATH ?? defaultChromePath();
 
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 800;
@@ -817,14 +845,27 @@ export async function reapOrphanChrome(): Promise<void> {
   const prefix = path.join(tmpdir(), 'ds-chrome-');
   let stdout: string;
   try {
-    ({ stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-      execFile('ps', ['-ax', '-o', 'pid=,command='], { maxBuffer: 8 * 1024 * 1024 }, (error, out) => {
-        if (error) reject(error);
-        else resolve({ stdout: String(out) });
-      });
-    }));
+    if (process.platform === 'win32') {
+      // No ps on Windows: CIM enumerates pid + command line in the same
+      // "<pid><space><command>" shape the parser below expects.
+      ({ stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+        execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+          'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }'],
+          { maxBuffer: 16 * 1024 * 1024 }, (error, out) => {
+            if (error) reject(error);
+            else resolve({ stdout: String(out) });
+          });
+      }));
+    } else {
+      ({ stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+        execFile('ps', ['-ax', '-o', 'pid=,command='], { maxBuffer: 8 * 1024 * 1024 }, (error, out) => {
+          if (error) reject(error);
+          else resolve({ stdout: String(out) });
+        });
+      }));
+    }
   } catch {
-    return; // ps unavailable: nothing we can safely enumerate
+    return; // process listing unavailable: nothing we can safely enumerate
   }
 
   const pids: number[] = [];
@@ -1310,7 +1351,15 @@ export class Browser {
         return {url:this.artifactUrl||this.requestedUrl,title:this.artifactTitle,settled};
       }
       const previous=this.contexts?.artifact();
-      if(!previous)throw new Error('artifact navigation context is unavailable; retry after the frame becomes available');
+      if(!previous){
+        // /open pre-starts the browser via ensureBrowser(), so `launched` is
+        // false here and the wait above is skipped — but on a first open the
+        // artifact iframe's context is still being discovered. Treat a missing
+        // context like a fresh launch (wait for it) instead of failing the
+        // whole open on a startup race.
+        const settled=await this.waitArtifact();if(settled)await this.bringToFront();
+        return {url:this.artifactUrl||this.requestedUrl,title:this.artifactTitle,settled};
+      }
       const navigation={previous,target:this.requestedUrl,sameDocumentVersion:this.contexts!.artifactSameDocumentVersion(),responded:false,loaderId:undefined as string|undefined};
       this.pendingNavigation=navigation;this.artifactUrl='';this.artifactTitle='';this.canvasError='';
       try{
