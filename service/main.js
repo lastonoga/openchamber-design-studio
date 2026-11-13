@@ -47,7 +47,7 @@ async function writeStudioConfig(root, rel, text) {
 }
 
 // service/project-server.ts
-import { execFile as execFile2, spawn as spawn2 } from "node:child_process";
+import { execFile as execFile2, spawn as spawn2, spawnSync } from "node:child_process";
 import { promises as fs3 } from "node:fs";
 import { createServer as createServer2 } from "node:net";
 import path3 from "node:path";
@@ -55,7 +55,7 @@ import { promisify } from "node:util";
 
 // service/browser.ts
 import { execFile, spawn } from "node:child_process";
-import { promises as fs2 } from "node:fs";
+import { existsSync, promises as fs2 } from "node:fs";
 import { tmpdir } from "node:os";
 import path2 from "node:path";
 
@@ -1054,7 +1054,26 @@ var ArtifactContexts = class {
 };
 
 // service/browser.ts
-var CHROME_PATH = process.env.DS_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+function defaultChromePath() {
+  if (process.platform === "win32") {
+    const drive = process.env["SYSTEMDRIVE"] ?? "C:";
+    const local = process.env["LOCALAPPDATA"];
+    const candidates = [
+      `${drive}\\Program Files\\Google\\Chrome\\Application\\chrome.exe`,
+      `${drive}\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`,
+      ...local ? [path2.join(local, "Google/Chrome/Application/chrome.exe")] : []
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return candidates[0];
+  }
+  if (process.platform === "linux") {
+    return "/usr/bin/google-chrome";
+  }
+  return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+}
+var CHROME_PATH = process.env.DS_CHROME_PATH ?? defaultChromePath();
 var VIEWPORT_WIDTH = 1280;
 var VIEWPORT_HEIGHT = 800;
 var CDP_TIMEOUT_MS = 3e4;
@@ -1673,12 +1692,31 @@ async function reapOrphanChrome() {
   const prefix = path2.join(tmpdir(), "ds-chrome-");
   let stdout;
   try {
-    ({ stdout } = await new Promise((resolve, reject) => {
-      execFile("ps", ["-ax", "-o", "pid=,command="], { maxBuffer: 8 * 1024 * 1024 }, (error, out) => {
-        if (error) reject(error);
-        else resolve({ stdout: String(out) });
-      });
-    }));
+    if (process.platform === "win32") {
+      ({ stdout } = await new Promise((resolve, reject) => {
+        execFile(
+          "powershell",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }'
+          ],
+          { maxBuffer: 16 * 1024 * 1024 },
+          (error, out) => {
+            if (error) reject(error);
+            else resolve({ stdout: String(out) });
+          }
+        );
+      }));
+    } else {
+      ({ stdout } = await new Promise((resolve, reject) => {
+        execFile("ps", ["-ax", "-o", "pid=,command="], { maxBuffer: 8 * 1024 * 1024 }, (error, out) => {
+          if (error) reject(error);
+          else resolve({ stdout: String(out) });
+        });
+      }));
+    }
   } catch {
     return;
   }
@@ -2157,7 +2195,11 @@ var Browser = class {
         return { url: this.artifactUrl || this.requestedUrl, title: this.artifactTitle, settled };
       }
       const previous = this.contexts?.artifact();
-      if (!previous) throw new Error("artifact navigation context is unavailable; retry after the frame becomes available");
+      if (!previous) {
+        const settled = await this.waitArtifact();
+        if (settled) await this.bringToFront();
+        return { url: this.artifactUrl || this.requestedUrl, title: this.artifactTitle, settled };
+      }
       const navigation = { previous, target: this.requestedUrl, sameDocumentVersion: this.contexts.artifactSameDocumentVersion(), responded: false, loaderId: void 0 };
       this.pendingNavigation = navigation;
       this.artifactUrl = "";
@@ -2829,7 +2871,7 @@ function portFromUrl(url) {
 }
 function groupAlive(pgid) {
   try {
-    process.kill(-pgid, 0);
+    process.kill(process.platform === "win32" ? pgid : -pgid, 0);
     return true;
   } catch (error) {
     return error.code !== "ESRCH";
@@ -2838,6 +2880,16 @@ function groupAlive(pgid) {
 var execFileAsync = promisify(execFile2);
 async function readProcessIdentity(pid) {
   try {
+    if (process.platform === "win32") {
+      const { stdout: stdout2 } = await execFileAsync("powershell", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(Get-Process -Id ${Math.trunc(pid)} -ErrorAction Stop).StartTime.Ticks`
+      ]);
+      const line2 = stdout2.trim();
+      return /^\d+$/.test(line2) ? line2 : null;
+    }
     const { stdout } = await execFileAsync("ps", ["-p", String(pid), "-o", "lstart="]);
     const line = stdout.trim();
     return line === "" ? null : line;
@@ -2857,6 +2909,10 @@ async function verifyRecordIdentity(record) {
 }
 function signalGroup(pgid, signal) {
   try {
+    if (process.platform === "win32") {
+      const result = spawnSync("taskkill", ["/pid", String(pgid), "/T", "/F"], { stdio: "ignore" });
+      return result.status === 0;
+    }
     process.kill(-pgid, signal);
     return true;
   } catch {
@@ -6791,7 +6847,7 @@ async function runNpmInstall(dir) {
     };
     let child;
     try {
-      child = spawn3("npm", ["install", "--no-audit", "--no-fund"], { cwd: dir, shell: false });
+      child = spawn3("npm", ["install", "--no-audit", "--no-fund"], { cwd: dir, shell: process.platform === "win32" });
     } catch (error) {
       finish({ ok: false, error: `could not run npm install: ${error instanceof Error ? error.message : String(error)}` });
       return;

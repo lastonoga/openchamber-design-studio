@@ -520,7 +520,10 @@ async function resolveDesignCommand(args: string): Promise<null | Awaited<Return
   // normal toggle, i.e. the agent-scaffolds flow. An UNREGISTERED directory is
   // refused outright: no scaffold, no session, no chip.
   if (parsed.brief.trim() !== '') {
-    if (pageTarget().kind === 'needs-project') {
+    // The rail panel frame never runs loadProjects(), so its cache is empty and
+    // a raw pageTarget() would refuse EVERY directory. Refresh first: the
+    // refusal must be based on a fresh read, never on an unloaded cache.
+    if ((await pageTargetFresh()).kind === 'needs-project') {
       state.pageError = NEEDS_PROJECT_MESSAGE;
       rerender();
       await host.toast({ kind: 'error', message: NEEDS_PROJECT_MESSAGE });

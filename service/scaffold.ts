@@ -541,7 +541,9 @@ async function runNpmInstall(dir: string): Promise<{ ok: true } | { ok: false; e
 
     let child;
     try {
-      child = spawn('npm', ['install', '--no-audit', '--no-fund'], { cwd: dir, shell: false });
+      // Windows resolves `npm` to npm.cmd, which cannot be spawned without a
+      // shell; Unix keeps the direct spawn.
+      child = spawn('npm', ['install', '--no-audit', '--no-fund'], { cwd: dir, shell: process.platform === 'win32' });
     } catch (error) {
       finish({ ok: false, error: `could not run npm install: ${error instanceof Error ? error.message : String(error)}` });
       return;
