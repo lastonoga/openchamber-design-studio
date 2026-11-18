@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'; const require = createRequire(impor
 // service/main.ts
 import http from "node:http";
 import { promises as fs8 } from "node:fs";
-import path10 from "node:path";
+import path11 from "node:path";
 
 // service/studio-config.ts
 import { promises as fs } from "node:fs";
@@ -50,14 +50,14 @@ async function writeStudioConfig(root, rel, text) {
 import { execFile as execFile2, spawn as spawn2 } from "node:child_process";
 import { promises as fs3 } from "node:fs";
 import { createServer as createServer2 } from "node:net";
-import path3 from "node:path";
+import path4 from "node:path";
 import { promisify } from "node:util";
 
 // service/browser.ts
 import { execFile, spawn } from "node:child_process";
-import { promises as fs2 } from "node:fs";
+import { existsSync as existsSync2, promises as fs2 } from "node:fs";
 import { tmpdir } from "node:os";
-import path2 from "node:path";
+import path3 from "node:path";
 
 // shared/probe-script.ts
 var PROBE_SCRIPT = String.raw`(function () {
@@ -1053,8 +1053,157 @@ var ArtifactContexts = class {
   }
 };
 
+// service/browser-env.ts
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path2 from "node:path";
+var BROWSER_MODES = ["auto", "own", "host"];
+var SERVICE_CONFIG_FILE = "config.json";
+var realProbe = {
+  platform: process.platform,
+  env: process.env,
+  exists: (file) => existsSync(file),
+  list: (dir) => {
+    try {
+      return readdirSync(dir);
+    } catch {
+      return [];
+    }
+  },
+  read: (file) => readFileSync(file, "utf8")
+};
+function chromeCandidates(platform, env) {
+  if (platform === "darwin") {
+    const home = env.HOME;
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      ...home ? [path2.join(home, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")] : [],
+      "/Applications/Chromium.app/Contents/MacOS/Chromium"
+    ];
+  }
+  if (platform === "win32") {
+    const drive = env.SYSTEMDRIVE ?? "C:";
+    const local = env.LOCALAPPDATA;
+    return [
+      `${drive}\\Program Files\\Google\\Chrome\\Application\\chrome.exe`,
+      `${drive}\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`,
+      ...local ? [path2.win32.join(local, "Google\\Chrome\\Application\\chrome.exe")] : []
+    ];
+  }
+  return [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/opt/google/chrome/chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+    "/usr/local/bin/chromium"
+  ];
+}
+function resolveChromePath(probe, configured) {
+  const explicit = probe.env.DS_CHROME_PATH?.trim() || configured?.trim();
+  if (explicit) return { path: explicit, candidates: [explicit] };
+  const candidates = chromeCandidates(probe.platform, probe.env);
+  return { path: candidates.find((candidate) => probe.exists(candidate)) ?? null, candidates };
+}
+function detectDisplay(probe) {
+  if (probe.platform !== "linux") {
+    return { found: true, env: {}, args: [], description: `${probe.platform} desktop` };
+  }
+  const display = probe.env.DISPLAY?.trim();
+  if (display) return { found: true, env: { DISPLAY: display }, args: [], description: `X11 display ${display}` };
+  const wayland = probe.env.WAYLAND_DISPLAY?.trim();
+  if (wayland) {
+    return { found: true, env: { WAYLAND_DISPLAY: wayland }, args: ["--ozone-platform=wayland"], description: `Wayland display ${wayland}` };
+  }
+  const x11 = probe.list("/tmp/.X11-unix").map((name) => /^X(\d+)$/.exec(name)?.[1]).filter((n) => n !== void 0).sort((a, b) => Number(a) - Number(b));
+  if (x11.length > 0) {
+    const value = `:${x11[0]}`;
+    return { found: true, env: { DISPLAY: value }, args: [], description: `X11 display ${value}` };
+  }
+  const runtime = probe.env.XDG_RUNTIME_DIR;
+  if (runtime) {
+    const socket = probe.list(runtime).filter((name) => /^wayland-\d+$/.test(name)).sort()[0];
+    if (socket) {
+      return { found: true, env: { WAYLAND_DISPLAY: socket }, args: ["--ozone-platform=wayland"], description: `Wayland display ${socket}` };
+    }
+  }
+  return { found: false, env: {}, args: [], description: "no X11 or Wayland display" };
+}
+function isRequestedMode(value) {
+  return typeof value === "string" && BROWSER_MODES.includes(value);
+}
+function readServiceConfig(probe, configPath) {
+  if (!configPath || !probe.exists(configPath)) return { config: {} };
+  try {
+    const parsed = JSON.parse(probe.read(configPath));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { config: {}, error: `${configPath} must hold a JSON object` };
+    }
+    const raw = parsed;
+    const config = {};
+    if (isRequestedMode(raw.browserMode)) config.browserMode = raw.browserMode;
+    else if (raw.browserMode !== void 0) {
+      return { config: {}, error: `browserMode in ${configPath} must be one of ${BROWSER_MODES.join(", ")}` };
+    }
+    if (typeof raw.chromePath === "string" && raw.chromePath.trim() !== "") config.chromePath = raw.chromePath.trim();
+    return { config };
+  } catch (error) {
+    return { config: {}, error: `could not read ${configPath}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+function decideMode(requested, chromePath, chromeExists, display) {
+  if (requested === "host") return { mode: "host", reason: 'browserMode is set to "host".' };
+  if (requested === "own") return { mode: "own", reason: 'browserMode is set to "own".' };
+  if (!chromePath || !chromeExists) {
+    return { mode: "host", reason: "Chrome or Chromium was not found on this machine, so the OpenChamber browser panel is used." };
+  }
+  if (!display.found) {
+    return { mode: "host", reason: `Chrome was found but there is ${display.description} to open a window on, so the OpenChamber browser panel is used.` };
+  }
+  return { mode: "own", reason: `Chrome was found at ${chromePath} and ${display.description} is available.` };
+}
+function resolveBrowserSetup(probe, dataDir) {
+  const configPath = dataDir ? path2.join(dataDir, SERVICE_CONFIG_FILE) : null;
+  const { config, error } = readServiceConfig(probe, configPath);
+  const envMode = probe.env.DS_BROWSER_MODE?.trim();
+  const requested = isRequestedMode(envMode) ? envMode : config.browserMode ?? "auto";
+  const chrome = resolveChromePath(probe, config.chromePath);
+  const display = detectDisplay(probe);
+  const chromeExists = chrome.path !== null && probe.exists(chrome.path);
+  const decision = decideMode(requested, chrome.path, chromeExists, display);
+  return {
+    mode: decision.mode,
+    requested,
+    reason: decision.reason,
+    chromePath: chrome.path,
+    chromeCandidates: chrome.candidates,
+    display,
+    configPath,
+    ...error ? { configError: error } : {}
+  };
+}
+var cached = null;
+function browserSetup() {
+  if (!cached) cached = resolveBrowserSetup(realProbe, process.env.OPENCHAMBER_SERVICE_DATA_DIR);
+  return cached;
+}
+var HostModeError = class extends Error {
+  constructor(feature) {
+    super(
+      `${feature} needs Design Studio's own Chrome window, which is not used here (host browser mode). Use the openchamber_web browser tool instead: in Settings \u2192 General \u2192 OpenChamber Tools \u2192 Browser provider, choose "OpenChamber Web" so the page opens in the OpenChamber browser panel.`
+    );
+    this.name = "HostModeError";
+  }
+};
+function chromeNotFoundMessage(setup) {
+  const where = setup.configPath ?? "the service config file";
+  if (setup.chromePath) {
+    return `Chrome was not found at ${setup.chromePath}. Fix "chromePath" in ${where}, or set "browserMode": "host" to use the OpenChamber browser panel instead.`;
+  }
+  return `Chrome or Chromium was not found (checked ${setup.chromeCandidates.join(", ")}). Install it, set "chromePath" in ${where}, or set "browserMode": "host" to use the OpenChamber browser panel instead.`;
+}
+
 // service/browser.ts
-var CHROME_PATH = process.env.DS_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 var VIEWPORT_WIDTH = 1280;
 var VIEWPORT_HEIGHT = 800;
 var CDP_TIMEOUT_MS = 3e4;
@@ -1670,7 +1819,7 @@ function validCameraZoom(value) {
   return value.action !== "wheel" || ["deltaY", "x", "y"].every((key) => typeof value[key] === "number");
 }
 async function reapOrphanChrome() {
-  const prefix = path2.join(tmpdir(), "ds-chrome-");
+  const prefix = path3.join(tmpdir(), "ds-chrome-");
   let stdout;
   try {
     ({ stdout } = await new Promise((resolve, reject) => {
@@ -1692,7 +1841,7 @@ async function reapOrphanChrome() {
     if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
     pids.push(pid);
     const dirMatch = line.match(/--user-data-dir=(\S+)/);
-    if (dirMatch && dirMatch[1] && path2.resolve(dirMatch[1]).startsWith(prefix)) {
+    if (dirMatch && dirMatch[1] && path3.resolve(dirMatch[1]).startsWith(prefix)) {
       profiles.add(dirMatch[1]);
     }
   }
@@ -1726,6 +1875,8 @@ var Browser = class {
   refreshing = false;
   canvasError = "";
   chrome = null;
+  /** Set by the spawned Chrome's 'error' event (missing binary, permissions). */
+  spawnError = null;
   cdp = null;
   profileDir = null;
   sessionId = null;
@@ -1785,17 +1936,31 @@ var Browser = class {
     if (!isWebSafeUrl(this.requestedUrl)) {
       throw new Error("launch() needs a web-safe --app URL");
     }
+    const setup = browserSetup();
+    if (setup.mode === "host") throw new HostModeError("Opening the live window");
+    const chromePath = setup.chromePath;
+    this.spawnError = null;
+    if (!chromePath || !existsSync2(chromePath)) throw new Error(chromeNotFoundMessage(setup));
     this.viewer = await startViewerServer({ url: this.requestedUrl, pages: [], viewport: this.viewport() });
     const url = this.viewer.url;
     this.launchUrl = url;
-    const profile = await fs2.mkdtemp(path2.join(tmpdir(), "ds-chrome-"));
+    const profile = await fs2.mkdtemp(path3.join(tmpdir(), "ds-chrome-"));
     this.profileDir = profile;
-    const chrome = spawn(CHROME_PATH, buildLaunchArgs(this.windowSpec, profile, url), {
+    const chrome = spawn(chromePath, [...buildLaunchArgs(this.windowSpec, profile, url), ...setup.display.args], {
       stdio: "ignore",
-      detached: true
+      detached: true,
+      // The host strips DISPLAY/WAYLAND_DISPLAY from the service: hand Chrome the
+      // display browser-env.ts found on disk.
+      env: { ...process.env, ...setup.display.env }
     });
     chrome.unref();
     this.chrome = chrome;
+    chrome.on("error", (error) => {
+      this.spawnError = error.code === "ENOENT" ? new Error(chromeNotFoundMessage(setup)) : new Error(`Chrome could not start: ${error.message}`);
+      if (this.chrome !== chrome) return;
+      this.closedAt = Date.now();
+      void this.quit();
+    });
     chrome.on("exit", () => {
       if (this.chrome !== chrome) return;
       this.closedAt = Date.now();
@@ -1850,9 +2015,10 @@ var Browser = class {
     return true;
   }
   async waitForPort(profile, chrome) {
-    const file = path2.join(profile, "DevToolsActivePort");
+    const file = path3.join(profile, "DevToolsActivePort");
     const deadline = Date.now() + LAUNCH_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      if (this.spawnError) throw this.spawnError;
       if (chrome.exitCode !== null) throw new Error(`Chrome exited early (${chrome.exitCode})`);
       try {
         const text = await fs2.readFile(file, "utf8");
@@ -2739,7 +2905,7 @@ var SERVER_STATE_FILE = "server.json";
 var activeSpawns = /* @__PURE__ */ new Map();
 var serverRecords = /* @__PURE__ */ new Map();
 function serverStatePath(dir) {
-  return path3.join(dir, SERVER_STATE_DIR, SERVER_STATE_FILE);
+  return path4.join(dir, SERVER_STATE_DIR, SERVER_STATE_FILE);
 }
 async function readServerRecord(dir) {
   try {
@@ -2761,7 +2927,7 @@ async function readServerRecord(dir) {
 async function writeServerRecord(dir, record) {
   serverRecords.set(dir, record);
   try {
-    await fs3.mkdir(path3.join(dir, SERVER_STATE_DIR), { recursive: true });
+    await fs3.mkdir(path4.join(dir, SERVER_STATE_DIR), { recursive: true });
     await fs3.writeFile(serverStatePath(dir), JSON.stringify(record), "utf8");
   } catch {
   }
@@ -2880,7 +3046,7 @@ async function waitForPortFree(port, timeoutMs) {
   return canBindPort(port);
 }
 async function stopDevServer(dir) {
-  const key = path3.resolve(dir);
+  const key = path4.resolve(dir);
   const record = serverRecords.get(key) ?? await readServerRecord(key);
   if (!record) return { stopped: false };
   const stoppedPgid = record.pgid;
@@ -2908,7 +3074,7 @@ async function stopDevServer(dir) {
   return { stopped: true };
 }
 async function getDevServerStatus(dir) {
-  const key = path3.resolve(dir);
+  const key = path4.resolve(dir);
   const record = serverRecords.get(key) ?? await readServerRecord(key);
   if (!record) {
     const { config } = await readStudioConfig(key);
@@ -2970,7 +3136,7 @@ async function ensureDevServer(url, options = {}) {
       error: "the dev server is not running and no project directory was provided to start it"
     };
   }
-  const key = path3.resolve(dir);
+  const key = path4.resolve(dir);
   const inFlight = activeSpawns.get(key);
   if (inFlight) {
     const joined = await inFlight;
@@ -3069,7 +3235,7 @@ async function startAndWait(command, dir, url, timeoutMs) {
       await delay2(50);
       identity = await readProcessIdentity(pid);
     }
-    await writeServerRecord(path3.resolve(dir), {
+    await writeServerRecord(path4.resolve(dir), {
       pgid: pid,
       pid,
       port: portFromUrl(url),
@@ -3105,7 +3271,8 @@ async function startAndWait(command, dir, url, timeoutMs) {
 
 // service/surface.ts
 var browser = null;
-async function ensureBrowser(url) {
+async function ensureBrowser(url, feature = "This browser action") {
+  if (browserSetup().mode === "host") throw new HostModeError(feature);
   if (!browser) browser = new Browser();
   if (url !== void 0) await browser.start(url);
   return browser;
@@ -3167,7 +3334,7 @@ function newBridgeToken() {
 }
 
 // service/browser-control.ts
-import path5 from "node:path";
+import path6 from "node:path";
 
 // node_modules/@openchamber/sdk/dist/scrollbar-style.js
 var GUEST_SCROLLING_ATTRIBUTE = "data-oc-scrolling";
@@ -3810,7 +3977,7 @@ function runGateReport(probe, ctx = {}) {
 
 // service/verify.ts
 import { promises as fs4 } from "node:fs";
-import path4 from "node:path";
+import path5 from "node:path";
 var DEFAULT_DEADLINE_MS = 10 * 6e4;
 var MAX_ITERATIONS = 40;
 var SOURCE_EXT = /* @__PURE__ */ new Set([
@@ -3851,19 +4018,19 @@ async function walkSources(root, dir, out) {
   for (const entry of entries) {
     if (out.length >= MAX_FILES) return;
     if (entry.name.startsWith(".")) continue;
-    const abs = path4.join(dir, entry.name);
+    const abs = path5.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
       await walkSources(root, abs, out);
       continue;
     }
     if (!entry.isFile()) continue;
-    if (!SOURCE_EXT.has(path4.extname(entry.name).toLowerCase())) continue;
+    if (!SOURCE_EXT.has(path5.extname(entry.name).toLowerCase())) continue;
     try {
       const stat = await fs4.stat(abs);
       if (stat.size > MAX_FILE_BYTES) continue;
       const text = await fs4.readFile(abs, "utf8");
-      out.push({ path: path4.relative(root, abs).split(path4.sep).join("/"), text });
+      out.push({ path: path5.relative(root, abs).split(path5.sep).join("/"), text });
     } catch {
     }
   }
@@ -3881,7 +4048,7 @@ async function gatherGateContext(dir) {
   }
   let tokens = {};
   try {
-    tokens = parseTokens(await fs4.readFile(path4.join(dir, "tokens.css"), "utf8"));
+    tokens = parseTokens(await fs4.readFile(path5.join(dir, "tokens.css"), "utf8"));
   } catch {
   }
   return { files: bounded, tokens };
@@ -3969,13 +4136,13 @@ function providerVerificationFromReport(report) {
 }
 async function runVerification(opts) {
   const dir = opts.dir;
-  if (dir !== null && !path4.isAbsolute(dir)) throw new Error("dir must be an absolute project path");
+  if (dir !== null && !path5.isAbsolute(dir)) throw new Error("dir must be an absolute project path");
   let matrix = opts.viewports && opts.viewports.length ? VIEWPORTS.filter((v) => opts.viewports.includes(v.id)) : [...VIEWPORTS];
   if (matrix.length === 0) matrix = [...VIEWPORTS];
   const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
   const deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
   const started = Date.now();
-  const browser2 = await ensureBrowser();
+  const browser2 = await ensureBrowser(void 0, "The viewport verification matrix");
   const restore = browser2.viewport();
   const camera = await browser2.getCamera();
   try {
@@ -4110,7 +4277,7 @@ function viewportToken(summary) {
 }
 function projectDir(context) {
   const dir = context.directory;
-  return dir && path5.isAbsolute(dir) ? dir : null;
+  return dir && path6.isAbsolute(dir) ? dir : null;
 }
 function requireSelector(value, action) {
   if (!value || !value.trim()) {
@@ -4454,7 +4621,7 @@ async function handleBrowserControl(_req, body) {
     );
   }
   try {
-    const browser2 = await ensureBrowser();
+    const browser2 = await ensureBrowser(void 0, `Design Studio's ${request.action}`);
     const dir = projectDir(request.context);
     switch (request.action) {
       case "browser.open":
@@ -4479,7 +4646,7 @@ async function handleBrowserControl(_req, body) {
         return await handleResize(browser2, request.parameters, dir);
     }
   } catch (error) {
-    if (error instanceof ActionError) return fail(error.message);
+    if (error instanceof ActionError || error instanceof HostModeError) return fail(error.message);
     const detail = error instanceof Error ? error.message : "unknown error";
     const hint = /not started|no attached session/i.test(detail) ? "No live window is open yet \u2014 call browser.open with a url first." : "Make sure Chrome is installed, then try again.";
     return fail(`The browser action failed: ${detail}. ${hint}`);
@@ -4487,7 +4654,7 @@ async function handleBrowserControl(_req, body) {
 }
 
 // service/verify-routes.ts
-import path6 from "node:path";
+import path7 from "node:path";
 var MAX_BODY_BYTES = 1e6;
 function sendJson(res, status, body) {
   const text = JSON.stringify(body);
@@ -4531,7 +4698,7 @@ async function handleRun(req, res) {
   }
   const dir = body.dir;
   const url = body.url;
-  if (typeof dir !== "string" || !path6.isAbsolute(dir)) {
+  if (typeof dir !== "string" || !path7.isAbsolute(dir)) {
     sendJson(res, 400, { error: "dir must be an absolute project path" });
     return;
   }
@@ -4570,7 +4737,7 @@ async function handleVerifyRequest(req, res) {
 
 // service/harness-plugin.ts
 import { promises as fs5 } from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // shared/harness-text.ts
 var CRAFT_RULES = {
@@ -4676,6 +4843,7 @@ ${CRAFT_RULES[id]}`).join("\n\n");
 var VERIFY_PROTOCOL = [
   "Before editing, state the change's acceptance criteria in one line.",
   "After each edit verify in this order (cheap/deterministic first): overflow \u2192 design tokens \u2192 accessibility \u2192 semantics \u2192 layout. Use the browser tool: `browser.capture` / `browser.open` returns a `verification` block covering every viewport (mobile, tablet, desktop, wide) with each gate's status.",
+  "If the browser answers without a `verification` block (OpenChamber's own browser panel is the provider), run the matrix yourself: `browser.resize` to each viewport, then `browser.snapshot` and `browser.capture`, and check the gates by reading them.",
   "Fix every P0 before starting a new gate tier; re-run the same gates after a fix.",
   "Budget: at most 5 fix/verify iterations OR 10 minutes, whichever comes first. Then stop and report.",
   "Never mark the work done while any P0 remains. Report the gate table and state the breakpoints you checked.",
@@ -4790,9 +4958,9 @@ function harnessPluginSource() {
   ].join("\n");
 }
 async function writeHarnessPlugin(projectDir2) {
-  const rootAbs = path7.resolve(projectDir2);
-  const abs = path7.resolve(rootAbs, HARNESS_PLUGIN_REL);
-  if (abs !== rootAbs && !abs.startsWith(rootAbs + path7.sep)) {
+  const rootAbs = path8.resolve(projectDir2);
+  const abs = path8.resolve(rootAbs, HARNESS_PLUGIN_REL);
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + path8.sep)) {
     throw new Error("path outside project");
   }
   const source = harnessPluginSource();
@@ -4812,17 +4980,17 @@ async function writeHarnessPlugin(projectDir2) {
     await fs5.writeFile(abs, source, "utf8");
     return { path: HARNESS_PLUGIN_REL, created: false, updated: true, changed: true };
   }
-  await fs5.mkdir(path7.dirname(abs), { recursive: true });
+  await fs5.mkdir(path8.dirname(abs), { recursive: true });
   await fs5.writeFile(abs, source, "utf8");
   return { path: HARNESS_PLUGIN_REL, created: true, updated: false, changed: true };
 }
 
 // service/project-files.ts
 import { promises as fs6, constants } from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 async function resolveReferencePath(dir, input) {
   const controls = /[\u0000-\u001f\u007f-\u009f]/;
-  if (typeof dir !== "string" || !path8.isAbsolute(dir) || controls.test(dir)) {
+  if (typeof dir !== "string" || !path9.isAbsolute(dir) || controls.test(dir)) {
     throw new Error("Source directory must be a valid absolute project path. Select a project and try again.");
   }
   if (typeof input !== "string" || input.trim() === "") {
@@ -4838,12 +5006,12 @@ async function resolveReferencePath(dir, input) {
   } catch {
     throw new Error("Source project directory is not accessible. Select an accessible project and try again.");
   }
-  const absolute = path8.isAbsolute(input);
+  const absolute = path9.isAbsolute(input);
   const inside = (target) => {
-    const relative = path8.relative(sourceDirectory, target);
-    return relative !== ".." && !relative.startsWith(".." + path8.sep) && !path8.isAbsolute(relative);
+    const relative = path9.relative(sourceDirectory, target);
+    return relative !== ".." && !relative.startsWith(".." + path9.sep) && !path9.isAbsolute(relative);
   };
-  const candidate = path8.resolve(sourceDirectory, input);
+  const candidate = path9.resolve(sourceDirectory, input);
   if (!absolute && !inside(candidate)) {
     throw new Error("Relative file path is outside the source project. Paste its absolute path to select an external file.");
   }
@@ -4879,17 +5047,17 @@ function shouldSkipDir(name) {
   return name.startsWith(".") || SKIP_DIRS2.has(name);
 }
 function isInside(root, target) {
-  return target === root || target.startsWith(root + path8.sep);
+  return target === root || target.startsWith(root + path9.sep);
 }
 async function listProjectFiles(dir, limit) {
-  if (typeof dir !== "string" || !path8.isAbsolute(dir)) {
+  if (typeof dir !== "string" || !path9.isAbsolute(dir)) {
     throw new Error("dir must be an absolute path");
   }
   if (limit !== void 0 && (!Number.isInteger(limit) || limit < 1)) {
     throw new Error("limit must be a positive integer");
   }
   const cap = Math.min(limit ?? DEFAULT_FILE_LIMIT, MAX_FILE_LIMIT);
-  const rootAbs = path8.resolve(dir);
+  const rootAbs = path9.resolve(dir);
   const rootReal = await fs6.realpath(rootAbs);
   const found = [];
   const visitedDirs = /* @__PURE__ */ new Set([rootReal]);
@@ -4904,7 +5072,7 @@ async function listProjectFiles(dir, limit) {
     entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
     for (const entry of entries) {
       if (found.length >= cap) return;
-      const abs = path8.join(absDir, entry.name);
+      const abs = path9.join(absDir, entry.name);
       if (entry.isSymbolicLink()) {
         let real;
         try {
@@ -4924,7 +5092,7 @@ async function listProjectFiles(dir, limit) {
           visitedDirs.add(real);
           await walk(abs);
         } else if (stat.isFile()) {
-          found.push(path8.relative(rootAbs, abs));
+          found.push(path9.relative(rootAbs, abs));
         }
         continue;
       }
@@ -4932,18 +5100,18 @@ async function listProjectFiles(dir, limit) {
         if (shouldSkipDir(entry.name)) continue;
         await walk(abs);
       } else if (entry.isFile()) {
-        found.push(path8.relative(rootAbs, abs));
+        found.push(path9.relative(rootAbs, abs));
       }
     }
   };
   await walk(rootAbs);
-  return found.map((rel) => rel.split(path8.sep).join("/")).sort((a, b) => a < b ? -1 : a > b ? 1 : 0).slice(0, cap);
+  return found.map((rel) => rel.split(path9.sep).join("/")).sort((a, b) => a < b ? -1 : a > b ? 1 : 0).slice(0, cap);
 }
 
 // service/scaffold.ts
 import { spawn as spawn3 } from "node:child_process";
 import { promises as fs7 } from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 
 // shared/design-systems.ts
 var DESIGN_SYSTEMS = [
@@ -6400,7 +6568,7 @@ async function findFreePort(start, end, offset) {
   return null;
 }
 function projectName(dir) {
-  const base = path9.basename(path9.resolve(dir)).toLowerCase();
+  const base = path10.basename(path10.resolve(dir)).toLowerCase();
   const slug = base.replace(/[^a-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "");
   if (!slug) return "design-project";
   return /^[a-z0-9]/.test(slug) ? slug : `design-${slug}`;
@@ -6703,7 +6871,7 @@ ${AUTHORITY_STATEMENT}`;
 }
 async function scaffoldProject(options) {
   const dir = options.dir;
-  if (!path9.isAbsolute(dir)) return { ok: false, error: "dir must be an absolute path" };
+  if (!path10.isAbsolute(dir)) return { ok: false, error: "dir must be an absolute path" };
   if (typeof options.type !== "string" || options.type.trim() === "") {
     return { ok: false, error: "type must be a non-empty string" };
   }
@@ -6746,7 +6914,7 @@ async function scaffoldProject(options) {
   ];
   const written = [];
   try {
-    await fs7.writeFile(path9.join(dir, DEFAULT_CONFIG_PATH), `${JSON.stringify(config, null, 2)}
+    await fs7.writeFile(path10.join(dir, DEFAULT_CONFIG_PATH), `${JSON.stringify(config, null, 2)}
 `, "utf8");
     written.push(DEFAULT_CONFIG_PATH);
   } catch (error) {
@@ -6754,7 +6922,7 @@ async function scaffoldProject(options) {
   }
   try {
     for (const [rel, content] of files) {
-      await fs7.writeFile(path9.join(dir, rel), content, "utf8");
+      await fs7.writeFile(path10.join(dir, rel), content, "utf8");
       written.push(rel);
     }
   } catch (error) {
@@ -6767,7 +6935,7 @@ async function scaffoldProject(options) {
     return { ok: false, error: error instanceof Error ? error.message : "could not write harness plugin" };
   }
   if (options.install !== false) {
-    const hasModules = await fs7.stat(path9.join(dir, "node_modules")).then((s) => s.isDirectory()).catch(() => false);
+    const hasModules = await fs7.stat(path10.join(dir, "node_modules")).then((s) => s.isDirectory()).catch(() => false);
     if (!hasModules) {
       const installed = await runNpmInstall(dir);
       if (!installed.ok) return { ok: false, error: installed.error };
@@ -6842,9 +7010,9 @@ async function readBody2(req) {
   return Buffer.concat(chunks).toString("utf8");
 }
 async function requireFile(root, rel) {
-  const abs = path10.resolve(root, rel);
-  const rootAbs = path10.resolve(root);
-  if (abs !== rootAbs && !abs.startsWith(rootAbs + path10.sep)) return null;
+  const abs = path11.resolve(root, rel);
+  const rootAbs = path11.resolve(root);
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + path11.sep)) return null;
   try {
     const stat = await fs8.stat(abs);
     return stat.isFile() ? abs : null;
@@ -6863,7 +7031,7 @@ async function newestMtime(dir, entryAbs) {
     for (const entry of names) {
       if (!entry.isFile()) continue;
       try {
-        const stat = await fs8.stat(path10.join(dir, entry.name));
+        const stat = await fs8.stat(path11.join(dir, entry.name));
         if (stat.mtimeMs > newest) newest = stat.mtimeMs;
       } catch {
       }
@@ -6873,6 +7041,8 @@ async function newestMtime(dir, entryAbs) {
   return newest;
 }
 var bridge = new BridgeClaims();
+var hostSession = null;
+var HOST_PICK_MESSAGE = "Picking and highlighting need Design Studio's own Chrome window, which is not used in host browser mode. Describe the element or give its CSS selector in the chat instead.";
 var server = http.createServer(async (req, res) => {
   const auth = req.headers["authorization"];
   if (auth !== `Bearer ${TOKEN}`) {
@@ -6904,7 +7074,7 @@ var server = http.createServer(async (req, res) => {
         return;
       }
       const dir = parsed?.dir;
-      if (typeof dir !== "string" || !path10.isAbsolute(dir)) {
+      if (typeof dir !== "string" || !path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be an absolute project path" });
         return;
       }
@@ -6953,7 +7123,7 @@ var server = http.createServer(async (req, res) => {
       }
       const body = parsed;
       const dir = body?.dir;
-      if (typeof dir !== "string" || !path10.isAbsolute(dir)) {
+      if (typeof dir !== "string" || !path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be an absolute project path" });
         return;
       }
@@ -6984,7 +7154,7 @@ var server = http.createServer(async (req, res) => {
       const body = parsed;
       const dir = body?.dir;
       const type = body?.type;
-      if (typeof dir !== "string" || !path10.isAbsolute(dir)) {
+      if (typeof dir !== "string" || !path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be an absolute project path" });
         return;
       }
@@ -7024,7 +7194,7 @@ var server = http.createServer(async (req, res) => {
         return;
       }
       const dir = parsed?.dir;
-      if (typeof dir !== "string" || !path10.isAbsolute(dir)) {
+      if (typeof dir !== "string" || !path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be an absolute project path" });
         return;
       }
@@ -7068,7 +7238,7 @@ var server = http.createServer(async (req, res) => {
         return;
       }
       const dir = parsed?.dir;
-      if (typeof dir !== "string" || !path10.isAbsolute(dir)) {
+      if (typeof dir !== "string" || !path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be an absolute project path" });
         return;
       }
@@ -7086,7 +7256,7 @@ var server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/server/status") {
       const dir = params.get("dir") ?? "";
-      if (!path10.isAbsolute(dir)) {
+      if (!path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be absolute" });
         return;
       }
@@ -7105,7 +7275,7 @@ var server = http.createServer(async (req, res) => {
     if (url.pathname === "/stat") {
       const root = params.get("dir") ?? "";
       const entry = params.get("path") ?? "";
-      if (!path10.isAbsolute(root)) {
+      if (!path11.isAbsolute(root)) {
         sendJson2(res, 400, { error: "dir must be absolute" });
         return;
       }
@@ -7114,11 +7284,27 @@ var server = http.createServer(async (req, res) => {
         sendJson2(res, 404, { error: "entry not found" });
         return;
       }
-      const dir = path10.dirname(abs);
+      const dir = path11.dirname(abs);
       sendJson2(res, 200, { mtime: await newestMtime(dir, abs) });
       return;
     }
+    if (url.pathname === "/browser") {
+      sendJson2(res, 200, { ...browserSetup() });
+      return;
+    }
     if (url.pathname === "/state") {
+      if (browserSetup().mode === "host") {
+        sendJson2(res, 200, {
+          url: hostSession?.url ?? "",
+          title: "",
+          lastPick: null,
+          pickSeq: 0,
+          windowOpen: hostSession !== null,
+          hostMode: true,
+          bridgeActive: bridge.active()
+        });
+        return;
+      }
       const target = getBrowser();
       if (!target) {
         sendJson2(res, 200, { url: "", title: "", lastPick: null, pickSeq: 0, windowOpen: false, bridgeActive: bridge.active() });
@@ -7170,7 +7356,7 @@ var server = http.createServer(async (req, res) => {
         return;
       }
       const dir = typeof body?.dir === "string" && body.dir !== "" ? body.dir : null;
-      if (dir && !path10.isAbsolute(dir)) {
+      if (dir && !path11.isAbsolute(dir)) {
         sendJson2(res, 400, { error: "dir must be absolute" });
         return;
       }
@@ -7182,6 +7368,15 @@ var server = http.createServer(async (req, res) => {
           return;
         }
         started = dev.started;
+      }
+      if (browserSetup().mode === "host") {
+        if (!/^https?:\/\//i.test(target)) {
+          sendJson2(res, 200, { ok: false, error: `only http(s) pages can be opened in the OpenChamber browser panel: ${target}` });
+          return;
+        }
+        hostSession = { url: target };
+        sendJson2(res, 200, { ok: true, url: target, title: "", settled: false, started, host: true });
+        return;
       }
       try {
         const browser2 = await ensureBrowser(target);
@@ -7197,6 +7392,7 @@ var server = http.createServer(async (req, res) => {
         sendJson2(res, 405, { error: "POST required" });
         return;
       }
+      hostSession = null;
       const browser2 = getBrowser();
       if (browser2) await browser2.close();
       try {
@@ -7221,6 +7417,10 @@ var server = http.createServer(async (req, res) => {
       const selector = parsed?.selector;
       if (typeof selector !== "string" || selector === "") {
         sendJson2(res, 400, { error: "selector is required" });
+        return;
+      }
+      if (browserSetup().mode === "host") {
+        sendJson2(res, 200, { ok: false, error: HOST_PICK_MESSAGE });
         return;
       }
       const browser2 = getBrowser();
@@ -7252,7 +7452,7 @@ var server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/config") {
       const root = params.get("dir") ?? "";
-      if (!path10.isAbsolute(root)) {
+      if (!path11.isAbsolute(root)) {
         sendJson2(res, 400, { error: "dir must be absolute" });
         return;
       }
@@ -7286,6 +7486,9 @@ var server = http.createServer(async (req, res) => {
 });
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`[design-studio] service listening on 127.0.0.1:${PORT}`);
+  const setup = browserSetup();
+  console.log(`[design-studio] browser mode: ${setup.mode} (requested ${setup.requested}). ${setup.reason}`);
+  if (setup.configError) console.error(`[design-studio] ${setup.configError}`);
 });
 var shuttingDown = false;
 async function shutdown() {

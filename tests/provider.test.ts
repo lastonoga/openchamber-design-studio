@@ -11,6 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CHROME = process.env.DS_CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const TOKEN = 'provider-acceptance-token';

@@ -6,11 +6,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const root=fileURLToPath(new URL('../',import.meta.url));
 const approved='/private/var/folders/hx/6ykzfqb5519dsfc25bzxxrzc0000gn/T/opencode';
 const scratch=await mkdtemp(path.join(await access(approved).then(()=>approved,()=>tmpdir()),'live-canvas-breaker-'));
 await mkdir(path.join(scratch,'service'));await mkdir(path.join(scratch,'viewer-client/src'),{recursive:true});
-for(const file of ['browser','artifact-context','viewer-server','viewer-ui'])await cp(path.join(root,'service',file+'.ts'),path.join(scratch,'service',file+'.ts'));
+for(const file of ['browser','browser-env','artifact-context','viewer-server','viewer-ui'])await cp(path.join(root,'service',file+'.ts'),path.join(scratch,'service',file+'.ts'));
 await cp(path.join(root,'shared'),path.join(scratch,'shared'),{recursive:true});
 // Stock controller + compiled asset module are real imports of viewer-ui.ts.
 await cp(path.join(root,'viewer-client/src/canvas-controller.js'),path.join(scratch,'viewer-client/src/canvas-controller.js'));

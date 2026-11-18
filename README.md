@@ -64,9 +64,11 @@ Requirements:
 
 - **OpenChamber ≥ 2.2.0** (the manifest declares `engines.openchamber` as
   `>=2.2.0`).
-- **Google Chrome** installed (the local service launches it). The default path is
-  macOS `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`;
-  `DS_CHROME_PATH` overrides it.
+- **Google Chrome or Chromium** for the live preview window, on a machine with a
+  screen. Without one, Design Studio uses OpenChamber's own browser panel instead
+  (see [Browser modes](#browser-modes)).
+- For host browser mode: the **OpenChamber desktop app**, which shows the page in
+  its browser panel and answers the agent's `openchamber_web` actions.
 - Approval of the extension's local **service** permission, once.
 
 Working on the extension itself:
@@ -183,15 +185,64 @@ your own user rights — the same rights the service itself runs with. It is not
 sandboxed from your machine, and it reads and writes files inside the design
 project it is pointed at.
 
+## Browser modes
+
+Design Studio's live preview runs in one of two places:
+
+- **Own window (`own`).** The service starts a real Chrome window at your dev
+  server and drives it over the DevTools protocol. This is what gives you
+  ⌘/Ctrl-click picking, hover highlights and the automatic verification matrix
+  (every viewport, every gate) in the agent's `browser.*` answers.
+- **OpenChamber browser panel (`host`).** No Chrome is started. The page opens in
+  OpenChamber's own browser panel beside the chat (a dev server on a remote
+  OpenChamber server is tunnelled to your desktop), and the agent drives that
+  panel with the `openchamber_web` tool. Picking, highlighting and the automatic
+  matrix are not available: describe the element or give its selector in the
+  chat, and the agent checks each breakpoint itself with `browser.resize`,
+  `browser.snapshot` and `browser.capture`.
+
+The default, `auto`, uses the own window when Chrome **and** a display are found,
+and the browser panel otherwise. A headless Linux server or container therefore
+never tries to open a window there.
+
+Chrome is looked for in the standard install locations: on Linux
+`google-chrome`, `google-chrome-stable`, `/opt/google/chrome/chrome`,
+`chromium`, `chromium-browser` and `/snap/bin/chromium`; on macOS the Google
+Chrome and Chromium app bundles; on Windows the Program Files and per-user
+installs. On Linux the display is found from the X11 sockets in `/tmp/.X11-unix`
+or a Wayland socket in `XDG_RUNTIME_DIR`.
+
+OpenChamber starts extension services with a short whitelist of environment
+variables, so `DISPLAY` and `DS_*` variables do not reach the service there. To
+choose the mode or the Chrome binary, create `config.json` in the extension's
+data folder (`OPENCHAMBER_SERVICE_DATA_DIR`; the service prints the path when it
+starts and reports it at `GET /browser`):
+
+```json
+{
+  "browserMode": "host",
+  "chromePath": "/usr/bin/chromium"
+}
+```
+
+`browserMode` is `auto`, `own` or `host`. Restart the extension after editing
+the file. When the service is started by hand, `DS_BROWSER_MODE` and
+`DS_CHROME_PATH` still take precedence.
+
+In host mode, select **OpenChamber Web** under **Settings → General → OpenChamber
+Tools → Browser provider**, so the agent's browser actions go to the panel. If
+Design Studio is still selected there, its answers say so.
+
 ## Compatibility
 
 - **OpenChamber:** `engines.openchamber >= 2.2.0`. Installation is refused when the
   running OpenChamber build is older.
 - **Platform:** desktop and web only. VS Code and mobile mark the guest catalog
   `unsupported` and do not load the extension.
-- **Browser:** a local Google Chrome. The default launch path is the macOS app
-  bundle; set `DS_CHROME_PATH` to point at Chrome elsewhere. Other operating
-  systems are not claimed beyond that override.
+- **Browser:** Google Chrome or Chromium for the own window, found in the
+  standard install locations on macOS, Linux and Windows (`chromePath` in the
+  service config overrides it). Without Chrome or a display, host browser mode
+  uses OpenChamber's browser panel; see [Browser modes](#browser-modes).
 
 ## Development
 

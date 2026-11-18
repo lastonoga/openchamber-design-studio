@@ -74,6 +74,11 @@ export type LiveState = {
    * the pick→chat bridge right now: this panel must not attach picks too.
    */
   bridgeActive?: boolean;
+  /**
+   * Host browser mode: the service launched no Chrome; the page lives in
+   * OpenChamber's own browser panel, so there is no window to pick in.
+   */
+  hostMode?: boolean;
 };
 
 /** What `POST /open` answers after opening/navigating the real window. */
@@ -86,6 +91,8 @@ export type OpenResult = {
   started?: boolean;
   /** Actionable reason when `ok` is false (the dev server is down, or open failed). */
   error?: string;
+  /** Host browser mode: nothing was launched; open `url` with `host.openUrl`. */
+  host?: boolean;
 };
 
 /** Status shown in the dock while an open (and dev-server start) is in flight. */
@@ -708,15 +715,24 @@ export const PICK_HINT = '⌘-click an element to add a reference';
  * nothing to Cmd-click, so the status row shows it dimmed. Pure so the row and a
  * test share one rule.
  */
-export function pickHintActive(state: Pick<LiveState, 'windowOpen'>): boolean {
-  return state.windowOpen;
+export function pickHintActive(state: Pick<LiveState, 'windowOpen' | 'hostMode'>): boolean {
+  return state.windowOpen && !state.hostMode;
 }
+
+/** The hint under the toggle: picking needs Design Studio's own window. */
+export function pickHintText(state: Pick<LiveState, 'hostMode'>, ownHint: string): string {
+  return state.hostMode ? HOST_MODE_HINT : ownHint;
+}
+
+/** Shown instead of the ⌘-click hint in host browser mode. */
+export const HOST_MODE_HINT = 'Preview opens in the OpenChamber browser panel · describe elements in chat';
 
 /**
  * One-line summary of the real window for the status row.
  */
-export function formatWindowStatus(state: Pick<LiveState, 'windowOpen' | 'url' | 'title'>): string {
+export function formatWindowStatus(state: Pick<LiveState, 'windowOpen' | 'url' | 'title' | 'hostMode'>): string {
   if (!state.windowOpen) return 'Window closed';
+  if (state.hostMode) return `Browser panel · ${state.url || 'no page open'}`;
   const where = state.url && state.url !== 'about:blank' ? state.url : 'no page open';
   return state.title ? `Window open · ${where} — ${state.title}` : `Window open · ${where}`;
 }
@@ -726,6 +742,7 @@ export function formatWindowStatus(state: Pick<LiveState, 'windowOpen' | 'url' |
  * carries the service's actionable error rather than a dead window.
  */
 export function formatOpenStatus(result: OpenResult): string {
+  if (result.ok && result.host) return result.started ? 'Dev server started · opened in the browser panel' : 'Opened in the browser panel';
   if (result.ok) return result.started ? 'Dev server started · window open' : 'Window open';
   return result.error ?? 'Could not open the window';
 }

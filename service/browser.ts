@@ -12,7 +12,7 @@
 // mode: the window IS the live view. The agent still gets deterministic PNG
 // stills through `capture()`.
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -24,9 +24,12 @@ import { startViewerServer } from './viewer-server.ts';
 import { ArtifactContexts } from './artifact-context.ts';
 import type { ShellAuthority, DefaultContext } from './artifact-context.ts';
 import type { ViewerPage } from './viewer-ui.ts';
+import { browserSetup, chromeNotFoundMessage, HostModeError } from './browser-env.ts';
 
-const CHROME_PATH =
-  process.env.DS_CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// The Chrome binary and display are discovered per launch by browser-env.ts
+// (standard install paths, the service config file, X11/Wayland sockets): the
+// host's whitelisted service environment carries neither DS_CHROME_PATH nor
+// DISPLAY, so a hardcoded path or an env-only override cannot work there.
 
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 800;
@@ -876,6 +879,8 @@ export class Browser {
   private refreshing = false;
   private canvasError = '';
   private chrome: ChildProcess | null = null;
+  /** Set by the spawned Chrome's 'error' event (missing binary, permissions). */
+  private spawnError: Error | null = null;
   private cdp: CdpClient | null = null;
   private profileDir: string | null = null;
   private sessionId: string | null = null;
@@ -944,6 +949,13 @@ export class Browser {
     if (!isWebSafeUrl(this.requestedUrl)) {
       throw new Error('launch() needs a web-safe --app URL');
     }
+    // Check the binary BEFORE anything is allocated, so a missing Chrome is one
+    // clear error and leaves no viewer server or profile directory behind.
+    const setup = browserSetup();
+    if (setup.mode === 'host') throw new HostModeError('Opening the live window');
+    const chromePath = setup.chromePath;
+    this.spawnError = null;
+    if (!chromePath || !existsSync(chromePath)) throw new Error(chromeNotFoundMessage(setup));
     this.viewer = await startViewerServer({url:this.requestedUrl,pages:[],viewport:this.viewport()});
     const url = this.viewer.url;
     this.launchUrl = url;
@@ -952,12 +964,26 @@ export class Browser {
 
     // Detached + unref: the window belongs to the user, not the service, so it
     // survives the service stopping/restarting (see stop()/stopBrowser()).
-    const chrome = spawn(CHROME_PATH, buildLaunchArgs(this.windowSpec, profile, url), {
+    const chrome = spawn(chromePath, [...buildLaunchArgs(this.windowSpec, profile, url), ...setup.display.args], {
       stdio: 'ignore',
       detached: true,
+      // The host strips DISPLAY/WAYLAND_DISPLAY from the service: hand Chrome the
+      // display browser-env.ts found on disk.
+      env: { ...process.env, ...setup.display.env },
     });
     chrome.unref();
     this.chrome = chrome;
+    // A spawn failure (ENOENT, EACCES) arrives as an 'error' event. Unhandled,
+    // Node throws it and the whole service process dies; record it instead so
+    // waitForPort() fails this launch with a readable message.
+    chrome.on('error', (error: NodeJS.ErrnoException) => {
+      this.spawnError = error.code === 'ENOENT' ? new Error(chromeNotFoundMessage(setup)) : new Error(`Chrome could not start: ${error.message}`);
+      // Same teardown as a window that died on its own: the viewer server and
+      // throwaway profile go, and the next start() clears the corpse first.
+      if (this.chrome !== chrome) return;
+      this.closedAt = Date.now();
+      void this.quit();
+    });
     chrome.on('exit', () => {
       // The child dying on its own = the live window is gone (user closed it,
       // or quit Chrome). stop() clears this.chrome before its own kill lands, so
@@ -1038,6 +1064,7 @@ export class Browser {
     const file = path.join(profile, 'DevToolsActivePort');
     const deadline = Date.now() + LAUNCH_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      if (this.spawnError) throw this.spawnError;
       if (chrome.exitCode !== null) throw new Error(`Chrome exited early (${chrome.exitCode})`);
       try {
         const text = await fs.readFile(file, 'utf8');

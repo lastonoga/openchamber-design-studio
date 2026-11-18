@@ -6,6 +6,10 @@ import path from 'node:path';
 
 import { parseManifestJson } from '@openchamber/sdk/schemas';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 test('package.json carries a valid OpenChamber manifest', async () => {

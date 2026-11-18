@@ -25,6 +25,7 @@ import { writeHarnessPlugin } from './harness-plugin.ts';
 import { listProjectFiles, resolveReferencePath } from './project-files.ts';
 import { scaffoldProject } from './scaffold.ts';
 import { BROWSER_PROVIDER_PATH } from '@openchamber/sdk';
+import { browserSetup } from './browser-env.ts';
 
 const PORT = Number(process.env.OPENCHAMBER_SERVICE_PORT ?? 0);
 const TOKEN = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
@@ -91,6 +92,16 @@ async function newestMtime(dir: string, entryAbs: string): Promise<number> {
 
 // Exclusive pick-bridge ownership: one chat window at a time attaches picks.
 const bridge = new BridgeClaims();
+
+// Host browser mode (service/browser-env.ts): no Chrome is launched; the panel
+// shows the page in OpenChamber's own browser panel (`host.openUrl`) and the
+// agent drives it through openchamber_web. The service only remembers which page
+// Design Mode opened, so /state can report the session as open until /close.
+let hostSession: { url: string } | null = null;
+
+const HOST_PICK_MESSAGE =
+  'Picking and highlighting need Design Studio\'s own Chrome window, which is not used in host browser mode. ' +
+  'Describe the element or give its CSS selector in the chat instead.';
 
 const server = http.createServer(async (req, res) => {
   const auth = req.headers['authorization'];
@@ -393,9 +404,27 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Which browser the live view uses and why (see service/browser-env.ts).
+    if (url.pathname === '/browser') {
+      sendJson(res, 200, { ...browserSetup() });
+      return;
+    }
+
     // The live window's state. Never starts the browser: a panel that only
     // reads state must not pop a Chrome window.
     if (url.pathname === '/state') {
+      if (browserSetup().mode === 'host') {
+        sendJson(res, 200, {
+          url: hostSession?.url ?? '',
+          title: '',
+          lastPick: null,
+          pickSeq: 0,
+          windowOpen: hostSession !== null,
+          hostMode: true,
+          bridgeActive: bridge.active(),
+        });
+        return;
+      }
       const target = getBrowser();
       if (!target) {
         sendJson(res, 200, { url: '', title: '', lastPick: null, pickSeq: 0, windowOpen: false, bridgeActive: bridge.active() });
@@ -470,6 +499,17 @@ const server = http.createServer(async (req, res) => {
         }
         started = dev.started;
       }
+      if (browserSetup().mode === 'host') {
+        // Nothing to launch: the panel hands the URL to OpenChamber's browser
+        // panel. A non-http(s) target cannot be shown there either.
+        if (!/^https?:\/\//i.test(target)) {
+          sendJson(res, 200, { ok: false, error: `only http(s) pages can be opened in the OpenChamber browser panel: ${target}` });
+          return;
+        }
+        hostSession = { url: target };
+        sendJson(res, 200, { ok: true, url: target, title: '', settled: false, started, host: true });
+        return;
+      }
       try {
         const browser = await ensureBrowser(target);
         const nav = await browser.open(target);
@@ -489,6 +529,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 405, { error: 'POST required' });
         return;
       }
+      hostSession = null;
       const browser = getBrowser();
       if (browser) await browser.close();
       try {
@@ -519,6 +560,10 @@ const server = http.createServer(async (req, res) => {
       const selector = (parsed as { selector?: unknown } | null)?.selector;
       if (typeof selector !== 'string' || selector === '') {
         sendJson(res, 400, { error: 'selector is required' });
+        return;
+      }
+      if (browserSetup().mode === 'host') {
+        sendJson(res, 200, { ok: false, error: HOST_PICK_MESSAGE });
         return;
       }
       const browser = getBrowser();
@@ -591,6 +636,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[design-studio] service listening on 127.0.0.1:${PORT}`);
+  const setup = browserSetup();
+  console.log(`[design-studio] browser mode: ${setup.mode} (requested ${setup.requested}). ${setup.reason}`);
+  if (setup.configError) console.error(`[design-studio] ${setup.configError}`);
 });
 
 let shuttingDown = false;

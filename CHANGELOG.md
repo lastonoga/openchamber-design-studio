@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Host browser mode**: when Chrome or a display is missing (`auto`), or when
+  `browserMode` is `host`, the live preview opens in OpenChamber's own browser
+  panel and the agent drives it through `openchamber_web`. No Chrome is started.
+  `GET /browser` reports the mode in force and why.
+- Service config file `config.json` in `OPENCHAMBER_SERVICE_DATA_DIR`, with
+  `browserMode` (`auto`/`own`/`host`) and `chromePath`.
+
+### Fixed
+
+- A missing or unusable Chrome no longer crashes the service with an unhandled
+  `spawn … ENOENT` error; the open fails with a message that says what to do.
+- Chrome is found in the standard Linux, macOS and Windows install locations
+  instead of only the macOS app bundle, and on Linux it is pointed at the X11 or
+  Wayland display that the host's service environment strips.
+
 ### Planned
 
 These are **not implemented yet** — they are noted here so the roadmap is

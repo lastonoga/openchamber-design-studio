@@ -28,6 +28,7 @@ import {
   OPENING_STATUS,
   PANEL_SIDEBAR_HINT,
   PICK_HINT,
+  pickHintText,
   ServiceUnavailable,
   allProjectsFromSnapshot,
   closeLive,
@@ -179,6 +180,8 @@ const state = {
   url: 'about:blank',
   title: '',
   windowOpen: false,
+  /** Host browser mode: the preview is OpenChamber's browser panel, not our Chrome. */
+  hostMode: false,
   /**
    * True while OUR side is bringing the window up: an open in flight, or the
    * whole Design Mode ON transition (which awaits the persist and the marker
@@ -472,7 +475,11 @@ export async function toggleMode(next: boolean, type?: DesignType | null, brief?
       // ON brings up the project's live window at its URL; the window is what
       // "Design Mode" IS. If it is already up, a click only raises it — never a
       // second window, and never suppressed.
-      if (state.windowOpen) {
+      if (state.windowOpen && state.hostMode) {
+        // Host browser mode has no window of ours to raise: show the page in
+        // OpenChamber's browser panel again.
+        await showInHostBrowser(state.url);
+      } else if (state.windowOpen) {
         try {
           await focusLive();
         } catch (error) {
@@ -882,6 +889,16 @@ async function openProjectWindow(
   openStatus(OPENING_STATUS);
   try {
     const result = await openLive(decision.url, decision.dir);
+    // Host browser mode: the service launched nothing. Hand the page to
+    // OpenChamber, which shows a local address in its browser panel beside the
+    // chat (tunnelled when the server is remote); the agent then drives that
+    // same panel through openchamber_web.
+    if (result.ok && result.host) {
+      state.hostMode = true;
+      state.windowOpen = true;
+      state.url = result.url || decision.url;
+      await showInHostBrowser(state.url);
+    }
     // Persist the URL the moment it is opened, so a later ON with no live config
     // still reopens this project at its last page.
     if (result.ok) await saveLastUrl(state.directory, decision.url);
@@ -902,6 +919,16 @@ async function openProjectWindow(
     openStatus(`Could not open ${decision.url}: ${error instanceof Error ? error.message : String(error)}`, 'error');
   } finally {
     state.pendingOpen = false;
+  }
+}
+
+/** Open `url` in OpenChamber's browser panel (host browser mode). */
+async function showInHostBrowser(url: string): Promise<void> {
+  if (!url || url === 'about:blank') return;
+  try {
+    await host.openUrl(url);
+  } catch (error) {
+    openStatus(`Could not show ${url} in the browser panel: ${error instanceof Error ? error.message : String(error)}`, 'error');
   }
 }
 
@@ -3021,7 +3048,7 @@ async function openDesignChat(row: DesignChatRow): Promise<void> {
  */
 function renderWindowStatus(): void {
   if (hintEl) {
-    hintEl.textContent = PICK_HINT;
+    hintEl.textContent = pickHintText(state, PICK_HINT);
     hintEl.classList.toggle('active', pickHintActive(state));
     hintEl.classList.toggle('idle', !pickHintActive(state));
   }
@@ -3067,6 +3094,7 @@ export async function applyState(stateData: LiveState): Promise<void> {
   state.url = stateData.url;
   state.title = stateData.title;
   state.windowOpen = stateData.windowOpen;
+  state.hostMode = stateData.hostMode === true;
   if (stateData.lastPick && stateData.pickSeq > state.lastSeq) {
     state.lastSeq = stateData.pickSeq;
     const pick: TrackedPick = { ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: new Date() };
