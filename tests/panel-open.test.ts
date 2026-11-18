@@ -1655,3 +1655,14 @@ test('host browser mode: no pick hint, browser-panel wording for status and open
     'Dev server started · opened in the browser panel',
   );
 });
+
+test('host browser mode asks the agent to open the preview with openchamber_web', () => {
+  const text = api.hostPreviewPrompt('http://localhost:5173/');
+  assert.match(text, /http:\/\/localhost:5173\//);
+  assert.match(text, /openchamber_web/);
+  assert.match(text, /browser\.open/);
+  assert.match(text, /do not edit any files/);
+  assert.equal(api.promptBusy({ code: 'SESSION_BUSY' }), true);
+  assert.equal(api.promptBusy({ code: 'NO_SESSION' }), false);
+  assert.equal(api.promptBusy(null), false);
+});

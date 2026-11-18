@@ -1857,6 +1857,16 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
   function pickHintText(state2, ownHint) {
     return state2.hostMode ? HOST_MODE_HINT : ownHint;
   }
+  function hostPreviewPrompt(url) {
+    return [
+      `Open ${url} in the OpenChamber browser panel with the openchamber_web tool (browser.open).`,
+      "This is the Design Studio preview: only open it, do not edit any files,",
+      "and reply with one line giving the page title (or the error if it would not open)."
+    ].join(" ");
+  }
+  function promptBusy(error) {
+    return error?.code === "SESSION_BUSY";
+  }
   var HOST_MODE_HINT = "Preview opens in the OpenChamber browser panel \xB7 describe elements in chat";
   function formatOpenStatus(result) {
     if (result.ok && result.host) return result.started ? "Dev server started \xB7 opened in the browser panel" : "Opened in the browser panel";
@@ -4381,6 +4391,23 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
   }
   async function showInHostBrowser(url) {
     if (!url || url === "about:blank") return;
+    const text = hostPreviewPrompt(url);
+    try {
+      const result = await host.prompt({ text, send: true });
+      if (result.sent === "sent") {
+        openStatus("Asked the agent to open the preview in the browser panel");
+        return;
+      }
+    } catch (error) {
+      if (promptBusy(error)) {
+        try {
+          await host.prompt({ text });
+          await host.toast({ kind: "info", message: "The agent is busy: the preview request is in the composer. Send it when the agent is done." });
+          return;
+        } catch {
+        }
+      }
+    }
     try {
       await host.openUrl(url);
     } catch (error) {

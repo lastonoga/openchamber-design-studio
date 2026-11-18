@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `browserMode` is `host`, the live preview opens in OpenChamber's own browser
   panel and the agent drives it through `openchamber_web`. No Chrome is started.
   `GET /browser` reports the mode in force and why.
+- In host mode the preview is opened by asking the agent to run
+  `openchamber_web` `browser.open`, so it lands in OpenChamber's browser panel
+  in the web app and PWA too, not only in the desktop app.
 - Service config file `config.json` in `OPENCHAMBER_SERVICE_DATA_DIR`, with
   `browserMode` (`auto`/`own`/`host`) and `chromePath`.
 

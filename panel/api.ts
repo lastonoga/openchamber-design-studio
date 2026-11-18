@@ -724,6 +724,27 @@ export function pickHintText(state: Pick<LiveState, 'hostMode'>, ownHint: string
   return state.hostMode ? HOST_MODE_HINT : ownHint;
 }
 
+/**
+ * Host browser mode: the message that asks the agent to open the preview with
+ * `openchamber_web`. The extension cannot call that tool itself, and
+ * `host.openUrl` only reaches OpenChamber's browser panel in the desktop app (a
+ * PWA or browser tab gets a new system-browser tab instead). The agent's
+ * `browser.open` opens the page in OpenChamber's browser panel on every client:
+ * drivable in the desktop app, display-only in the web app.
+ */
+export function hostPreviewPrompt(url: string): string {
+  return [
+    `Open ${url} in the OpenChamber browser panel with the openchamber_web tool (browser.open).`,
+    'This is the Design Studio preview: only open it, do not edit any files,',
+    'and reply with one line giving the page title (or the error if it would not open).',
+  ].join(' ');
+}
+
+/** Error codes from `host.prompt` that mean "the agent cannot take it now". */
+export function promptBusy(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'SESSION_BUSY';
+}
+
 /** Shown instead of the ⌘-click hint in host browser mode. */
 export const HOST_MODE_HINT = 'Preview opens in the OpenChamber browser panel · describe elements in chat';
 

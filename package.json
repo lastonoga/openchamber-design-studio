@@ -1,6 +1,6 @@
 {
   "name": "openchamber-design-studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenChamber Design Studio \u2014 a chat-driven design harness with a live sandboxed preview and point-and-edit into the standard OpenChamber chat.",
   "license": "MIT",
   "private": true,

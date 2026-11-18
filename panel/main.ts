@@ -29,6 +29,8 @@ import {
   PANEL_SIDEBAR_HINT,
   PICK_HINT,
   pickHintText,
+  hostPreviewPrompt,
+  promptBusy,
   ServiceUnavailable,
   allProjectsFromSnapshot,
   closeLive,
@@ -922,9 +924,37 @@ async function openProjectWindow(
   }
 }
 
-/** Open `url` in OpenChamber's browser panel (host browser mode). */
+/**
+ * Show `url` in OpenChamber's browser panel (host browser mode).
+ *
+ * The page is opened BY THE AGENT: the panel asks it to run openchamber_web
+ * `browser.open`. That is the only route that reaches the browser panel on
+ * every client (desktop app, PWA, browser tab), and it puts the page in the tab
+ * the agent then drives. It costs one short agent turn. When the session is
+ * busy the request is left in the composer to send later; with no session (or
+ * a refused prompt) `host.openUrl` is the fallback, which in the desktop app
+ * still lands in the browser panel and elsewhere opens a system-browser tab.
+ */
 async function showInHostBrowser(url: string): Promise<void> {
   if (!url || url === 'about:blank') return;
+  const text = hostPreviewPrompt(url);
+  try {
+    const result = await host.prompt({ text, send: true });
+    if (result.sent === 'sent') {
+      openStatus('Asked the agent to open the preview in the browser panel');
+      return;
+    }
+  } catch (error) {
+    if (promptBusy(error)) {
+      try {
+        await host.prompt({ text });
+        await host.toast({ kind: 'info', message: 'The agent is busy: the preview request is in the composer. Send it when the agent is done.' });
+        return;
+      } catch {
+        /* fall through to openUrl */
+      }
+    }
+  }
   try {
     await host.openUrl(url);
   } catch (error) {

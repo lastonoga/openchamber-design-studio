@@ -193,10 +193,21 @@ Design Studio's live preview runs in one of two places:
   server and drives it over the DevTools protocol. This is what gives you
   ⌘/Ctrl-click picking, hover highlights and the automatic verification matrix
   (every viewport, every gate) in the agent's `browser.*` answers.
-- **OpenChamber browser panel (`host`).** No Chrome is started. The page opens in
-  OpenChamber's own browser panel beside the chat (a dev server on a remote
-  OpenChamber server is tunnelled to your desktop), and the agent drives that
-  panel with the `openchamber_web` tool. Picking, highlighting and the automatic
+- **OpenChamber browser panel (`host`).** No Chrome is started. Turning Design
+  Mode on asks the agent to open the page with `openchamber_web` (`browser.open`),
+  which puts it in OpenChamber's own browser panel beside the chat and in the tab
+  the agent then drives. This costs one short agent turn; when the agent is busy
+  the request waits in the composer, and with no session the page is handed to
+  OpenChamber directly. Extensions cannot call `openchamber_web` themselves, and
+  a direct hand-off only reaches the panel in the desktop app (a PWA or browser
+  tab opens a system-browser tab instead).
+  - In the **desktop app** the panel is fully drivable, and a dev server on a
+    remote OpenChamber server is tunnelled to your machine, so `localhost` URLs
+    work.
+  - In the **web app or PWA** the panel is display-only: the agent can open the
+    page there but cannot snapshot, click or capture it, and `localhost` means
+    your own computer, so the project `url` must be an address your browser can
+    reach. Picking, highlighting and the automatic
   matrix are not available: describe the element or give its selector in the
   chat, and the agent checks each breakpoint itself with `browser.resize`,
   `browser.snapshot` and `browser.capture`.
