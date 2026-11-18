@@ -8,6 +8,10 @@ import path from 'node:path';
 
 import { Browser, PICK_SCRIPT, buildLaunchArgs, otherLoopback } from '../service/browser.ts';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CHROME = process.env.DS_CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const TOKEN = 'browser-acceptance-token';

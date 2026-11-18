@@ -130,6 +130,7 @@ export function defaultCraft(ids?: CraftRuleId[]): string {
 export const VERIFY_PROTOCOL = [
   "Before editing, state the change's acceptance criteria in one line.",
   'After each edit verify in this order (cheap/deterministic first): overflow → design tokens → accessibility → semantics → layout. Use the browser tool: `browser.capture` / `browser.open` returns a `verification` block covering every viewport (mobile, tablet, desktop, wide) with each gate\'s status.',
+  'If the browser answers without a `verification` block (OpenChamber\'s own browser panel is the provider), run the matrix yourself: `browser.resize` to each viewport, then `browser.snapshot` and `browser.capture`, and check the gates by reading them.',
   'Fix every P0 before starting a new gate tier; re-run the same gates after a fix.',
   'Budget: at most 5 fix/verify iterations OR 10 minutes, whichever comes first. Then stop and report.',
   'Never mark the work done while any P0 remains. Report the gate table and state the breakpoints you checked.',

@@ -11,6 +11,7 @@
 import type { SurfaceController } from '@openchamber/sdk';
 
 import { Browser } from './browser.ts';
+import { browserSetup, HostModeError } from './browser-env.ts';
 
 let browser: Browser | null = null;
 
@@ -23,7 +24,10 @@ let browser: Browser | null = null;
  * is created lazily at it. That is what keeps an `about:blank` placeholder out
  * of the launch path — a blank launch would give a normal tabbed window.
  */
-export async function ensureBrowser(url?: string): Promise<Browser> {
+export async function ensureBrowser(url?: string, feature = 'This browser action'): Promise<Browser> {
+  // Host browser mode never launches Chrome: the live view is OpenChamber's own
+  // browser panel, driven through openchamber_web.
+  if (browserSetup().mode === 'host') throw new HostModeError(feature);
   if (!browser) browser = new Browser();
   if (url !== undefined) await browser.start(url);
   return browser;

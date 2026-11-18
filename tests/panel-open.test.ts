@@ -1640,3 +1640,29 @@ test('an unknown server state renders as checking, never as a stopped Start affo
   assert.match(control, /state\.serverStatus === null/, 'an unread state is its own branch');
   assert.match(control, /Checking the preview dev server…/, 'the affordance says it is checking');
 });
+
+test('host browser mode: no pick hint, browser-panel wording for status and opens', () => {
+  assert.equal(pickHintActive({ windowOpen: true, hostMode: true }), false, 'nothing to ⌘-click in the browser panel');
+  assert.equal(pickHintActive({ windowOpen: true }), true, 'own mode is unchanged');
+  assert.equal(api.pickHintText({ hostMode: true }, PICK_HINT), api.HOST_MODE_HINT);
+  assert.equal(api.pickHintText({}, PICK_HINT), PICK_HINT);
+  assert.equal(
+    formatWindowStatus({ windowOpen: true, url: 'http://localhost:5173', title: '', hostMode: true }),
+    'Browser panel · http://localhost:5173',
+  );
+  assert.equal(
+    formatOpenStatus({ ok: true, url: 'http://localhost:5173', title: '', settled: false, started: true, host: true }),
+    'Dev server started · opened in the browser panel',
+  );
+});
+
+test('host browser mode asks the agent to open the preview with openchamber_web', () => {
+  const text = api.hostPreviewPrompt('http://localhost:5173/');
+  assert.match(text, /http:\/\/localhost:5173\//);
+  assert.match(text, /openchamber_web/);
+  assert.match(text, /browser\.open/);
+  assert.match(text, /do not edit any files/);
+  assert.equal(api.promptBusy({ code: 'SESSION_BUSY' }), true);
+  assert.equal(api.promptBusy({ code: 'NO_SESSION' }), false);
+  assert.equal(api.promptBusy(null), false);
+});

@@ -8,6 +8,10 @@ import { Browser } from '../service/browser.ts';
 import { ensureBrowser } from '../service/surface.ts';
 import { runVerification } from '../service/verify.ts';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const chrome = process.env.DS_CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const mods = { alt: false, ctrl: false, meta: false, shift: false };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

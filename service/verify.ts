@@ -312,7 +312,7 @@ export async function runVerification(opts: RunVerificationOptions): Promise<Ver
   const deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
   const started = Date.now();
 
-  const browser = await ensureBrowser();
+  const browser = await ensureBrowser(undefined, 'The viewport verification matrix');
   const restore = browser.viewport();
   const camera = await browser.getCamera();
   try {

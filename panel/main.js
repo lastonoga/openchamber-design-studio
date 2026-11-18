@@ -1688,12 +1688,6 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
   function getState() {
     return callService("/state");
   }
-  function claimPickBridge(token) {
-    return callService("/bridge", void 0, "POST", JSON.stringify(token ? { token } : {}));
-  }
-  function releasePickBridge(token) {
-    return callService("/bridge", void 0, "POST", JSON.stringify({ release: true, token }));
-  }
   function focusLive() {
     return callService("/focus", void 0, "POST");
   }
@@ -1858,9 +1852,24 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
   }
   var PICK_HINT = "\u2318-click an element to add a reference";
   function pickHintActive(state2) {
-    return state2.windowOpen;
+    return state2.windowOpen && !state2.hostMode;
   }
+  function pickHintText(state2, ownHint) {
+    return state2.hostMode ? HOST_MODE_HINT : ownHint;
+  }
+  function hostPreviewPrompt(url) {
+    return [
+      `Open ${url} in the OpenChamber browser panel with the openchamber_web tool (browser.open).`,
+      "This is the Design Studio preview: only open it, do not edit any files,",
+      "and reply with one line giving the page title (or the error if it would not open)."
+    ].join(" ");
+  }
+  function promptBusy(error) {
+    return error?.code === "SESSION_BUSY";
+  }
+  var HOST_MODE_HINT = "Preview opens in the OpenChamber browser panel \xB7 describe elements in chat";
   function formatOpenStatus(result) {
+    if (result.ok && result.host) return result.started ? "Dev server started \xB7 opened in the browser panel" : "Opened in the browser panel";
     if (result.ok) return result.started ? "Dev server started \xB7 window open" : "Window open";
     return result.error ?? "Could not open the window";
   }
@@ -2030,6 +2039,7 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
   var VERIFY_PROTOCOL = [
     "Before editing, state the change's acceptance criteria in one line.",
     "After each edit verify in this order (cheap/deterministic first): overflow \u2192 design tokens \u2192 accessibility \u2192 semantics \u2192 layout. Use the browser tool: `browser.capture` / `browser.open` returns a `verification` block covering every viewport (mobile, tablet, desktop, wide) with each gate's status.",
+    "If the browser answers without a `verification` block (OpenChamber's own browser panel is the provider), run the matrix yourself: `browser.resize` to each viewport, then `browser.snapshot` and `browser.capture`, and check the gates by reading them.",
     "Fix every P0 before starting a new gate tier; re-run the same gates after a fix.",
     "Budget: at most 5 fix/verify iterations OR 10 minutes, whichever comes first. Then stop and report.",
     "Never mark the work done while any P0 remains. Report the gate table and state the breakpoints you checked.",
@@ -3900,6 +3910,8 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
     url: "about:blank",
     title: "",
     windowOpen: false,
+    /** Host browser mode: the preview is OpenChamber's browser panel, not our Chrome. */
+    hostMode: false,
     /**
      * True while OUR side is bringing the window up: an open in flight, or the
      * whole Design Mode ON transition (which awaits the persist and the marker
@@ -4099,7 +4111,9 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
       if (next && !wasOn) await writeDesignMarker();
       renderModeUi();
       if (next) {
-        if (state.windowOpen) {
+        if (state.windowOpen && state.hostMode) {
+          await showInHostBrowser(state.url);
+        } else if (state.windowOpen) {
           try {
             await focusLive();
           } catch (error) {
@@ -4343,50 +4357,6 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
       await host.toast({ kind: "error", message: `Could not attach: ${error instanceof Error ? error.message : String(error)}` });
     }
   }
-  var bridgeToken = null;
-  var bridgeHeld = false;
-  var delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  async function holdPickBridge() {
-    if (bridgeHeld) return null;
-    bridgeHeld = true;
-    try {
-      while (state.mode.on) {
-        try {
-          const claim = await claimPickBridge(bridgeToken ?? void 0);
-          if (!claim.ok || !claim.token) break;
-          bridgeToken = claim.token;
-          const stateData = await getState();
-          state.url = stateData.url;
-          state.title = stateData.title;
-          state.windowOpen = stateData.windowOpen;
-          if (stateData.lastPick && stateData.pickSeq > state.lastSeq) {
-            state.lastSeq = stateData.pickSeq;
-            await addToChat({ ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: /* @__PURE__ */ new Date() });
-          }
-          if (!stateData.windowOpen) break;
-        } catch {
-        }
-        await delay(700);
-      }
-    } finally {
-      bridgeHeld = false;
-      const token = bridgeToken;
-      bridgeToken = null;
-      if (token) void releasePickBridge(token).catch(() => void 0);
-    }
-    return null;
-  }
-  async function resolveOrBridge(request) {
-    const chip = await resolveDesignCommand(request.args);
-    if (!state.mode.on) return chip;
-    if (bridgeHeld) return chip;
-    try {
-      const stateData = await getState();
-      if (stateData.bridgeActive) return chip;
-    } catch {
-    }
-    return holdPickBridge();
-  }
   function openStatus(message, kind = "info") {
     setStatus(message, kind);
   }
@@ -4400,6 +4370,12 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
     openStatus(OPENING_STATUS);
     try {
       const result = await openLive(decision.url, decision.dir);
+      if (result.ok && result.host) {
+        state.hostMode = true;
+        state.windowOpen = true;
+        state.url = result.url || decision.url;
+        await showInHostBrowser(state.url);
+      }
       if (result.ok) await saveLastUrl(state.directory, decision.url);
       if (result.ok && result.started && decision.dir) markServerStartedByUs(decision.dir);
       if (result.ok && dir) {
@@ -4411,6 +4387,31 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
       openStatus(`Could not open ${decision.url}: ${error instanceof Error ? error.message : String(error)}`, "error");
     } finally {
       state.pendingOpen = false;
+    }
+  }
+  async function showInHostBrowser(url) {
+    if (!url || url === "about:blank") return;
+    const text = hostPreviewPrompt(url);
+    try {
+      const result = await host.prompt({ text, send: true });
+      if (result.sent === "sent") {
+        openStatus("Asked the agent to open the preview in the browser panel");
+        return;
+      }
+    } catch (error) {
+      if (promptBusy(error)) {
+        try {
+          await host.prompt({ text });
+          await host.toast({ kind: "info", message: "The agent is busy: the preview request is in the composer. Send it when the agent is done." });
+          return;
+        } catch {
+        }
+      }
+    }
+    try {
+      await host.openUrl(url);
+    } catch (error) {
+      openStatus(`Could not show ${url} in the browser panel: ${error instanceof Error ? error.message : String(error)}`, "error");
     }
   }
   async function resolveOpenUrl() {
@@ -5881,7 +5882,7 @@ Source: ${reference.sourceDirectory}`;
   }
   function renderWindowStatus() {
     if (hintEl) {
-      hintEl.textContent = PICK_HINT;
+      hintEl.textContent = pickHintText(state, PICK_HINT);
       hintEl.classList.toggle("active", pickHintActive(state));
       hintEl.classList.toggle("idle", !pickHintActive(state));
     }
@@ -5909,6 +5910,7 @@ Source: ${reference.sourceDirectory}`;
     state.url = stateData.url;
     state.title = stateData.title;
     state.windowOpen = stateData.windowOpen;
+    state.hostMode = stateData.hostMode === true;
     if (stateData.lastPick && stateData.pickSeq > state.lastSeq) {
       state.lastSeq = stateData.pickSeq;
       const pick = { ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: /* @__PURE__ */ new Date() };
@@ -6062,7 +6064,7 @@ Source: ${reference.sourceDirectory}`;
   async function main() {
     const root = document.getElementById("root");
     if (!root) throw new Error("missing #root");
-    host.onResolve((request) => resolveOrBridge(request));
+    host.onResolve((request) => resolveDesignCommand(request.args));
     let started = false;
     host.onReady((context) => {
       applyHostReady(context, document.documentElement);

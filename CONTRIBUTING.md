@@ -12,8 +12,10 @@ your first change.
   `node-version: 22`). The build targets ES2020 (panel) and Node 20 (service).
 - **OpenChamber ≥ 2.2.0** to load the extension (`openchamber.engines.openchamber`
   in `package.json`).
-- **Google Chrome** at `/Applications/Google Chrome.app` for the two integration
-  tests (see below). Set `DS_CHROME_PATH` to point elsewhere.
+- **Google Chrome or Chromium** in a standard install location for the
+  Chrome-dependent integration tests (see below). Set `DS_CHROME_PATH` to point
+  elsewhere. These tests pin `DS_BROWSER_MODE=own`; on headless Linux run them
+  under `xvfb-run`.
 
 ## Set up
 

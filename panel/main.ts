@@ -28,6 +28,9 @@ import {
   OPENING_STATUS,
   PANEL_SIDEBAR_HINT,
   PICK_HINT,
+  pickHintText,
+  hostPreviewPrompt,
+  promptBusy,
   ServiceUnavailable,
   allProjectsFromSnapshot,
   closeLive,
@@ -179,6 +182,8 @@ const state = {
   url: 'about:blank',
   title: '',
   windowOpen: false,
+  /** Host browser mode: the preview is OpenChamber's browser panel, not our Chrome. */
+  hostMode: false,
   /**
    * True while OUR side is bringing the window up: an open in flight, or the
    * whole Design Mode ON transition (which awaits the persist and the marker
@@ -472,7 +477,11 @@ export async function toggleMode(next: boolean, type?: DesignType | null, brief?
       // ON brings up the project's live window at its URL; the window is what
       // "Design Mode" IS. If it is already up, a click only raises it — never a
       // second window, and never suppressed.
-      if (state.windowOpen) {
+      if (state.windowOpen && state.hostMode) {
+        // Host browser mode has no window of ours to raise: show the page in
+        // OpenChamber's browser panel again.
+        await showInHostBrowser(state.url);
+      } else if (state.windowOpen) {
         try {
           await focusLive();
         } catch (error) {
@@ -882,6 +891,16 @@ async function openProjectWindow(
   openStatus(OPENING_STATUS);
   try {
     const result = await openLive(decision.url, decision.dir);
+    // Host browser mode: the service launched nothing. Hand the page to
+    // OpenChamber, which shows a local address in its browser panel beside the
+    // chat (tunnelled when the server is remote); the agent then drives that
+    // same panel through openchamber_web.
+    if (result.ok && result.host) {
+      state.hostMode = true;
+      state.windowOpen = true;
+      state.url = result.url || decision.url;
+      await showInHostBrowser(state.url);
+    }
     // Persist the URL the moment it is opened, so a later ON with no live config
     // still reopens this project at its last page.
     if (result.ok) await saveLastUrl(state.directory, decision.url);
@@ -902,6 +921,44 @@ async function openProjectWindow(
     openStatus(`Could not open ${decision.url}: ${error instanceof Error ? error.message : String(error)}`, 'error');
   } finally {
     state.pendingOpen = false;
+  }
+}
+
+/**
+ * Show `url` in OpenChamber's browser panel (host browser mode).
+ *
+ * The page is opened BY THE AGENT: the panel asks it to run openchamber_web
+ * `browser.open`. That is the only route that reaches the browser panel on
+ * every client (desktop app, PWA, browser tab), and it puts the page in the tab
+ * the agent then drives. It costs one short agent turn. When the session is
+ * busy the request is left in the composer to send later; with no session (or
+ * a refused prompt) `host.openUrl` is the fallback, which in the desktop app
+ * still lands in the browser panel and elsewhere opens a system-browser tab.
+ */
+async function showInHostBrowser(url: string): Promise<void> {
+  if (!url || url === 'about:blank') return;
+  const text = hostPreviewPrompt(url);
+  try {
+    const result = await host.prompt({ text, send: true });
+    if (result.sent === 'sent') {
+      openStatus('Asked the agent to open the preview in the browser panel');
+      return;
+    }
+  } catch (error) {
+    if (promptBusy(error)) {
+      try {
+        await host.prompt({ text });
+        await host.toast({ kind: 'info', message: 'The agent is busy: the preview request is in the composer. Send it when the agent is done.' });
+        return;
+      } catch {
+        /* fall through to openUrl */
+      }
+    }
+  }
+  try {
+    await host.openUrl(url);
+  } catch (error) {
+    openStatus(`Could not show ${url} in the browser panel: ${error instanceof Error ? error.message : String(error)}`, 'error');
   }
 }
 
@@ -3021,7 +3078,7 @@ async function openDesignChat(row: DesignChatRow): Promise<void> {
  */
 function renderWindowStatus(): void {
   if (hintEl) {
-    hintEl.textContent = PICK_HINT;
+    hintEl.textContent = pickHintText(state, PICK_HINT);
     hintEl.classList.toggle('active', pickHintActive(state));
     hintEl.classList.toggle('idle', !pickHintActive(state));
   }
@@ -3067,6 +3124,7 @@ export async function applyState(stateData: LiveState): Promise<void> {
   state.url = stateData.url;
   state.title = stateData.title;
   state.windowOpen = stateData.windowOpen;
+  state.hostMode = stateData.hostMode === true;
   if (stateData.lastPick && stateData.pickSeq > state.lastSeq) {
     state.lastSeq = stateData.pickSeq;
     const pick: TrackedPick = { ...stateData.lastPick, seq: stateData.pickSeq, url: stateData.url, pickedAt: new Date() };

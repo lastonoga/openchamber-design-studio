@@ -8,9 +8,13 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {inflateSync} from 'node:zlib';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const root=fileURLToPath(new URL('../',import.meta.url)),sourceRoot=process.env.NOVA_ORIGINAL||root;
 const scratch=await mkdtemp(path.join(tmpdir(),'nova-breaker-'));await mkdir(path.join(scratch,'service'));await mkdir(path.join(scratch,'viewer-client/src'),{recursive:true});
-for(const f of ['browser','artifact-context','viewer-server','viewer-ui'])await cp(path.join(sourceRoot,'service',f+'.ts'),path.join(scratch,'service',f+'.ts'));
+for(const f of ['browser','browser-env','artifact-context','viewer-server','viewer-ui'])await cp(path.join(sourceRoot,'service',f+'.ts'),path.join(scratch,'service',f+'.ts'));
 await cp(path.join(sourceRoot,'shared'),path.join(scratch,'shared'),{recursive:true});await symlink(path.join(root,'node_modules'),path.join(scratch,'node_modules'));
 // The stock controller is a real module now; the compiled asset module is
 // inert strings in a Node import, so copies are safe. The fixture still

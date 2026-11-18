@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { Browser } from '../service/browser.ts';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const mods={alt:false,ctrl:false,meta:false,shift:false};
 async function shell(browser:Browser,expression:string):Promise<any>{const b=browser as any;const r=await b.cdp.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true},b.sessionId);if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
 async function until(check:()=>Promise<boolean>,message:string){const deadline=Date.now()+4000;while(Date.now()<deadline){if(await check())return;await new Promise<void>(resolve=>setTimeout(resolve,20));}assert.fail(message);}

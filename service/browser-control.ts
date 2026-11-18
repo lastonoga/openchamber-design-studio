@@ -50,6 +50,7 @@ import {
   runVerification,
 } from './verify.ts';
 import { ensureBrowser } from './surface.ts';
+import { HostModeError } from './browser-env.ts';
 import type { Browser } from './browser.ts';
 
 const NO_MODIFIERS = { alt: false, ctrl: false, meta: false, shift: false };
@@ -583,7 +584,7 @@ export async function handleBrowserControl(
   }
 
   try {
-    const browser = await ensureBrowser();
+    const browser = await ensureBrowser(undefined, `Design Studio's ${request.action}`);
     const dir = projectDir(request.context);
 
     switch (request.action) {
@@ -609,7 +610,7 @@ export async function handleBrowserControl(
         return await handleResize(browser, request.parameters, dir);
     }
   } catch (error) {
-    if (error instanceof ActionError) return fail(error.message);
+    if (error instanceof ActionError || error instanceof HostModeError) return fail(error.message);
     const detail = error instanceof Error ? error.message : 'unknown error';
     // A not-started browser is the common case: the window launches lazily, so
     // any action before browser.open has no session to act on.

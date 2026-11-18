@@ -6,6 +6,10 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import { Browser } from '../service/browser.ts';
 
+// These tests exercise Design Studio's own Chrome window; pin own browser mode so
+// `auto` cannot pick host mode on a machine without Chrome or a display.
+process.env.DS_BROWSER_MODE ??= 'own';
+
 const source=await readFile(new URL('../service/browser.ts',import.meta.url),'utf8');
 const bridge=source.match(/const ARTIFACT_BRIDGE = `([\s\S]*?)`;[\s\S]*?const ARTIFACT_SCRIPTS/)![1]!;
 type EventData=Record<string,any>;
